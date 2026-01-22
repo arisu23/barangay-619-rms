@@ -3,6 +3,7 @@ import cors from "cors";
 import userRoutes from "./modules/users/user.routes.js";
 import { errorHandler } from "./middlewares/error.middleware.js"
 import authRoutes from "./modules/auth/auth.routes.js";
+import residentRoutes from "./modules/residents/resident.routes.js";
 
 const app = express();
 
@@ -15,6 +16,9 @@ app.use("/api/auth", authRoutes);
 
 //Register user
 app.use("/api/users", userRoutes);
+
+//Resident Route
+app.use("/api/residents", residentRoutes);
 
 //Health check route
 app.get("/api/health", (_req, res) => {
