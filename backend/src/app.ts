@@ -5,6 +5,7 @@ import { errorHandler } from "./middlewares/error.middleware.js"
 import authRoutes from "./modules/auth/auth.routes.js";
 import residentRoutes from "./modules/residents/resident.routes.js";
 import householdRoutes from "./modules/households/household.routes.js";
+import familyRoutes from "./modules/family/family.routes.js";
 
 const app = express();
 
@@ -23,6 +24,9 @@ app.use("/api/residents", residentRoutes);
 
 //Household Route
 app.use("/api/households", householdRoutes);
+
+//Family Route
+app.use("/api/families", familyRoutes);
 
 //Health check route
 app.get("/api/health", (_req, res) => {
