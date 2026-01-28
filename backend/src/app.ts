@@ -4,6 +4,7 @@ import userRoutes from "./modules/users/user.routes.js";
 import { errorHandler } from "./middlewares/error.middleware.js"
 import authRoutes from "./modules/auth/auth.routes.js";
 import residentRoutes from "./modules/residents/resident.routes.js";
+import residentArchiveRoutes from "./modules/residents/residentArchive.routes.js";
 import householdRoutes from "./modules/households/household.routes.js";
 import familyRoutes from "./modules/family/family.routes.js";
 
@@ -21,6 +22,9 @@ app.use("/api/users", userRoutes);
 
 //Resident Route
 app.use("/api/residents", residentRoutes);
+
+//Resident Archive Route
+app.use("/api/residents/archive", residentArchiveRoutes);
 
 //Household Route
 app.use("/api/households", householdRoutes);

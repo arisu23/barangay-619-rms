@@ -16,6 +16,20 @@ export class FamilyRepository {
         }
     }
 
+    //Check if a resident is the primary household head
+    static async isHouseholdHead(residentId: number): Promise<boolean> {
+        const conn = await pool.getConnection();
+        try {
+            const rows = await conn.query(
+                `SELECT FamilyHeadID FROM FamilyHead WHERE ResidentID = ? AND HeadType = 'Primary'`,
+                [residentId]
+            );
+            return rows.length > 0;
+        } finally {
+            conn.release();
+        }
+    }
+
     //Assign a primary family head
     static async assignPrimaryHead(householdId: number, residentId: number) {
         const conn = await pool.getConnection();

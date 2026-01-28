@@ -147,4 +147,22 @@ export class ResidentRepository {
       conn.release();
     }
   }
+
+  //Get all archived (Deceased/MovedOut) residents
+  static async getArchivedResidents() {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT r.ResidentID, r.FirstName, r.LastName, r.Sex, r.ResidentStatus, 
+                d.DateofDeath
+         FROM Resident r
+         LEFT JOIN Deceased d ON r.ResidentID = d.ResidentID
+         WHERE r.ResidentStatus IN ('Deceased', 'MovedOut')
+         ORDER BY r.LastName`
+      );
+      return rows;
+    } finally {
+      conn.release();
+    }
+  }
 }
