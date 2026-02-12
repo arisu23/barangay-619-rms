@@ -3,8 +3,8 @@ import { pool } from "../../config/database.js";
 interface AuditLogInput {
     userId: number;
     action: string;
-    oldValue?: string;
-    newValue?: string;
+    oldValue?: string | undefined;
+    newValue?: string | undefined;
 }
 
 export class AuditTrailRepository {

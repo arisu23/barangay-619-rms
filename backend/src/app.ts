@@ -9,6 +9,8 @@ import householdRoutes from "./modules/households/household.routes.js";
 import familyRoutes from "./modules/family/family.routes.js";
 import auditRoutes from "./modules/audit/audit.routes.js";
 import householdNumberRoutes from "./modules/households/householdNumber.routes.js";
+import officialRoutes from "./modules/officials/official.routes.js";
+import barangayInfoRoutes from "./modules/barangay-info/barangayInfo.routes.js";
 
 const app = express();
 
@@ -39,6 +41,12 @@ app.use("/api/families", familyRoutes);
 
 //Audit Trail Route
 app.use("/api/audit-logs", auditRoutes);
+
+//Official Route (Admin Only)
+app.use("/api/officials", officialRoutes);
+
+//Barangay Info Route
+app.use("/api/barangay-info", barangayInfoRoutes);
 
 //Health check route
 app.get("/api/health", (_req, res) => {
