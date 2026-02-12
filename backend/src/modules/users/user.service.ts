@@ -17,5 +17,50 @@ export const UserService = {
         if (!isMatch) return null;
 
         return user;
+    },
+
+    async getAllUsers() {
+        return UserRepository.findAll();
+    },
+
+    async getUserById(userId: number) {
+        const user = await UserRepository.findById(userId);
+        if (!user) throw { status: 404, message: "User not found" };
+        return user;
+    },
+
+    async updateUser(
+        userId: number,
+        data: {
+            username?: string;
+            password?: string;
+            role?: "Admin" | "Staff";
+        }
+    ) {
+        const existing = await UserRepository.findById(userId);
+        if (!existing) throw { status: 404, message: "User not found" };
+
+        //Hash password if provided
+        if (data.password) {
+            data.password = await bcrypt.hash(data.password, SALT_ROUNDS);
+        }
+
+        const updated = await UserRepository.update(userId, data);
+        if (!updated) throw { status: 500, message: "No changes made" };
+
+        return true;
+    },
+
+    async updateUserStatus(
+        userId: number,
+        status: "Active" | "Inactive"
+    ) {
+        const existing = await UserRepository.findById(userId);
+        if (!existing) throw { status: 404, message: "User not found" };
+
+        const updated = await UserRepository.updateStatus(userId, status);
+        if (!updated) throw { status: 500, message: "No changes made" };
+
+        return true;
     }
 };

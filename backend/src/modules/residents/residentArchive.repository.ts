@@ -71,4 +71,28 @@ export class ResidentArchiveRepository {
             conn.release();
         }
     }
+
+    //Retrieve movement history for a specific resident
+    static async getResidentHistory(residentId: number) {
+        const conn = await pool.getConnection();
+        try {
+            const rows = await conn.query(
+                `SELECT 
+                rh.HistoryID,
+                rh.ChangeType,
+                rh.ChangeDate,
+                rh.PreviousHouseholdID,
+                rh.NewHouseholdID,
+                u.Username AS changedBy
+            FROM ResidentHistory rh
+            LEFT JOIN UserAccount u ON rh.UserID = u.UserID
+            WHERE rh.ResidentID = ?
+            ORDER BY rh.ChangeDate DESC`,
+            [residentId]
+        );
+            return rows;
+       } finally {
+            conn.release();
+       }
+    }
 }

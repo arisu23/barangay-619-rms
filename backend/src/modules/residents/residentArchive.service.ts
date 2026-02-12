@@ -87,4 +87,14 @@ export class ResidentArchiveService {
     static async getArchivedResidents() {
         return ResidentRepository.getArchivedResidents();
     }
+
+    static async getResidentHistory(residentId: number) {
+        const resident = await ResidentRepository.getResidentById(residentId);
+        
+        if (!resident) {
+            throw { status: 404, message: "Resident not found!" };
+        }
+
+        return ResidentArchiveRepository.getResidentHistory(residentId);
+    }
 }

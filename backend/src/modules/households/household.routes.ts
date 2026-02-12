@@ -5,28 +5,21 @@ import { authorizeRole } from "../../middlewares/role.middleware.js";
 
 const router = Router();
 
-//All household routes require login
 router.use(authenticate);
 
-//Create household
-router.post(
-    "/",
-    authorizeRole("Admin"),
-    HouseholdController.createHousehold
-);
+// GET /api/households - List all households (FR11)
+router.get("/", authorizeRole("Admin", "Staff"), HouseholdController.getAllHouseholds);
 
-//Update household number
-router.put(
-    "/:houseId/status",
-    authorizeRole("Admin"),
-    HouseholdController.updateHouseholdStatus
-);
+// GET /api/households/:id - Get household by ID
+router.get("/:id", authorizeRole("Admin", "Staff"), HouseholdController.getHouseholdById);
 
-//Get household by Id
-router.get(
-    "/:id",
-    authorizeRole("Admin", "Staff"),
-    HouseholdController.getHouseholdById
-)
+// POST /api/households - Create household
+router.post("/", authorizeRole("Admin"), HouseholdController.createHousehold);
+
+// PUT /api/households/:id - Update household (FR12)
+router.put("/:id", authorizeRole("Admin"), HouseholdController.updateHousehold);
+
+// PUT /api/households/:houseId/status - Update household number status
+router.put("/:houseId/status", authorizeRole("Admin"), HouseholdController.updateHouseholdStatus);
 
 export default router;

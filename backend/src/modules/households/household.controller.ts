@@ -60,4 +60,55 @@ export class HouseholdController {
             });
         }
     }
+
+    static async getAllHouseholds(_req: Request, res: Response) {
+        try {
+            const households = await HouseholdService.getAllHouseholds();
+            res.json({ success: true, data: households });
+        } catch (err: any) {
+            res.status(err.status || 500).json({
+                success: false,
+                message: err.message || "Failed to retrieve households!"
+            });
+        }
+    }
+
+    static async updateHousehold(req: Request, res: Response) {
+        try {
+            const householdId = Number(req.params.id);
+            const userId = req.user!.userId;
+            await HouseholdService.updateHousehold(householdId, req.body, userId);
+            res.json({ success: true, message: "Household updated successfully!" });
+        } catch (err: any) {
+            res.status(err.status || 500).json({
+                success: false,
+                message: err.message || "Failed to update household!"
+            });
+        }
+    }
+
+    static async getAllHouseholdNumbers(_req: Request, res: Response) {
+        try {
+            const numbers = await HouseholdService.getAllHouseholdNumbers();
+            res.json({ success: true, data: numbers });
+        } catch (err: any) {
+            res.status(err.status || 500).json({
+                success: false,
+                message: err.message || "Failed to retrieve household numbers!"
+            });
+        }
+    }
+    
+    static async createHouseholdNumber(req: Request, res: Response) {
+        try {
+            const userId = req.user!.userId;
+            const houseId = await HouseholdService.createHouseholdNumber(req.body, userId);
+            res.status(201).json({ success: true, data: { houseId } });
+        } catch (err: any) {
+            res.status(err.status || 500).json({
+                success: false,
+                message: err.message || "Failed to create household number!"
+            });
+        }
+    }
 }

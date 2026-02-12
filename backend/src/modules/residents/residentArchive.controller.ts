@@ -65,4 +65,18 @@ export class ResidentArchiveController {
             next(error);
         }
     }
+
+    static async getResidentHistory(
+        req: Request,
+        res: Response,
+        next: NextFunction
+    ) {
+        try {
+            const residentId = Number(req.params.residentId);
+            const history = await ResidentArchiveService.getResidentHistory(residentId);
+            res.json({ success: true, data: history });
+        } catch (error) {
+            next(error);
+        }
+    }
 }

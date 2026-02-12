@@ -7,6 +7,8 @@ import residentRoutes from "./modules/residents/resident.routes.js";
 import residentArchiveRoutes from "./modules/residents/residentArchive.routes.js";
 import householdRoutes from "./modules/households/household.routes.js";
 import familyRoutes from "./modules/family/family.routes.js";
+import auditRoutes from "./modules/audit/audit.routes.js";
+import householdNumberRoutes from "./modules/households/householdNumber.routes.js";
 
 const app = express();
 
@@ -24,13 +26,19 @@ app.use("/api/users", userRoutes);
 app.use("/api/residents", residentRoutes);
 
 //Resident Archive Route
-app.use("/api/residents/archive", residentArchiveRoutes);
+app.use("/api/archives", residentArchiveRoutes);
 
 //Household Route
 app.use("/api/households", householdRoutes);
 
+//Household Number Route
+app.use("/api/household-numbers", householdNumberRoutes);
+
 //Family Route
 app.use("/api/families", familyRoutes);
+
+//Audit Trail Route
+app.use("/api/audit-logs", auditRoutes);
 
 //Health check route
 app.get("/api/health", (_req, res) => {

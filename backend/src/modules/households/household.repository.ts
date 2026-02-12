@@ -105,4 +105,74 @@ export class HouseholdRepository {
       conn.release();
     }
   }
+
+  static async getAllHouseholds() {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT
+          h.HouseholdID,
+          hn.HouseholdNumberName AS householdNumber,
+          hn.Status AS householdStatus,
+          
+          a.HouseNumber,
+          a.Street_Alley_Zone,
+          a.Barangay,
+          (SELECT COUNT(*) FROM Resident r WHERE r.HouseholdID = h.HouseholdID AND r.ResidentStatus = 'Active')
+          AS memberCount FROM Household h
+          JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
+          JOIN Address a ON h.AddressID = a.AddressID
+          ORDER BY h.HouseholdID`
+      );
+
+      return rows;
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async updateHousehold(householdId: number, data: { addressId?: number }) {
+    const conn = await pool.getConnection();
+    try {
+        if (data.addressId) {
+            const result = await conn.query(
+                `UPDATE Household SET AddressID = ? WHERE HouseholdID = ?`,
+                [data.addressId, householdId]
+            );
+            return result.affectedRows > 0;
+        }
+        return false;
+    } finally {
+        conn.release();
+    }
+}
+// HouseholdNumber methods
+static async getAllHouseholdNumbers() {
+    const conn = await pool.getConnection();
+    try {
+        const rows = await conn.query(
+            `SELECT HouseID, HouseholdNumberName, Status FROM HouseholdNumber ORDER BY HouseID`
+        );
+        return rows;
+    } finally {
+        conn.release();
+    }
+}
+static async createHouseholdNumber(data: { householdNumberName: string; addressId?: number }) {
+    const conn = await pool.getConnection();
+    try {
+        const result = await conn.query(
+            `INSERT INTO HouseholdNumber (HouseholdNumberName, AddressID, Status) VALUES (?, ?, 'Available')`,
+            [data.householdNumberName, data.addressId ?? null]
+        );
+        return Number(result.insertId);
+    } catch (err: any) {
+        if (err.errno === 1062) {
+            throw { status: 409, message: "Household number already exists!" };
+        }
+        throw err;
+    } finally {
+        conn.release();
+    }
+}
 }

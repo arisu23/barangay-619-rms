@@ -8,40 +8,16 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
-/**
- * GET /api/residents/archive
- * Get all archived residents
- * UC14 – Manage Archive Registry
- * Access: Admin, Staff
- */
-router.get(
-    "/",
-    authorizeRole("Admin", "Staff"),
-    ResidentArchiveController.getArchivedResidents
-);
+// GET /api/archives - List archived residents (UC14)
+router.get("/", authorizeRole("Admin", "Staff"), ResidentArchiveController.getArchivedResidents);
 
-/**
- * POST /api/residents/archive/:id
- * Archive a resident (Deceased or MovedOut)
- * UC5 – Archive Resident Record
- * Access: Admin, Staff
- */
-router.post(
-    "/:id",
-    authorizeRole("Admin", "Staff"),
-    ResidentArchiveController.archiveResident
-);
+// POST /api/archives/:id - Archive a resident (UC5)
+router.post("/:id", authorizeRole("Admin", "Staff"), ResidentArchiveController.archiveResident);
 
-/**
- * POST /api/residents/archive/:id/restore
- * Restore an archived resident back to Active
- * UC14 – Manage Archive Registry
- * Access: Admin, Staff
- */
-router.post(
-    "/:id/restore",
-    authorizeRole("Admin", "Staff"),
-    ResidentArchiveController.restoreResident
-);
+// POST /api/archives/:id/restore - Restore archived resident (UC14)
+router.post("/:id/restore", authorizeRole("Admin", "Staff"), ResidentArchiveController.restoreResident);
+
+// GET /api/archives/history/:residentId - Get resident history (FR14)
+router.get("/history/:residentId", authorizeRole("Admin", "Staff"), ResidentArchiveController.getResidentHistory);
 
 export default router;

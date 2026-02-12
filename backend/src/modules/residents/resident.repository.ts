@@ -7,10 +7,21 @@ export class ResidentRepository {
     try {
       await conn.beginTransaction();
 
-      //Add Address
+      //Add Address fields
       const addressResult = await conn.query(
-        `INSERT INTO Address (HouseNumber, Street_Alley_Zone, Barangay, Municipality) VALUES (?, ?, ?, ?)`,
+        `INSERT INTO Address (
+          Unit_RoomNo_Floor, 
+          Building_Name, 
+          Lot_Block_Phase_Num, 
+          HouseNumber, 
+          Street_Alley_Zone, 
+          Barangay, 
+          Municipality
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
+          data.address?.unitRoomFloor ?? null,
+          data.address?.buildingName ?? null,
+          data.address?.lotBlockPhase ?? null,
           data.address.houseNumber,
           data.address.street,
           data.address.barangay,
@@ -27,20 +38,46 @@ export class ResidentRepository {
         householdId = data.householdId;
       }
 
-      //Add Resident
+      //Add Resident (all schema fields)
       const residentResult = await conn.query(
-        `INSERT INTO Resident (FirstName, MiddleName, LastName, Sex, DateOfBirth, PlaceOfBirth, CivilStatus, Citizenship, HouseholdID, ResidentStatus, InhabitantType) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?)`,
+        `INSERT INTO Resident (
+          FirstName, 
+          MiddleName, 
+          LastName, 
+          Suffix,
+          Sex, 
+          DateOfBirth, 
+          PlaceOfBirth, 
+          CivilStatus, 
+          Citizenship, 
+          Religion,
+          HouseholdID, 
+          ResidentStatus, 
+          RContactNumber,
+          REmail,
+          InhabitantType,
+          Mothers_Maiden_Surname,
+          Mothers_Maiden_FirstName,
+          Mothers_Maiden_MiddleName
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', ?, ?, ?, ?, ?, ?)`,
         [
           data.firstName,
           data.middleName ?? null,
           data.lastName,
+          data.suffix ?? null,
           data.sex,
           data.dateOfBirth,
           data.placeOfBirth,
           data.civilStatus,
           data.citizenship,
+          data.religion ?? null,
           householdId,
+          data.contactNumber ?? null,
+          data.email ?? null,
           data.inhabitantType,
+          data.mothersMaidenSurname ?? null,
+          data.mothersMaidenFirstName ?? null,
+          data.mothersMaidenMiddleName ?? null,
         ],
       );
 
@@ -71,18 +108,33 @@ export class ResidentRepository {
     }
   }
 
-  //Get Resident By ID
+  //Get Resident By ID (all fields)
   static async getResidentById(id: number) {
     const conn = await pool.getConnection();
 
     try {
       const rows = await conn.query(
         `SELECT
-        r.ResidentID,
-        r.FirstName,
-        r.LastName,
-        r.HouseholdID AS residentHouseholdId,
-        h.HouseholdID AS householdId
+          r.ResidentID,
+          r.FirstName,
+          r.MiddleName,
+          r.LastName,
+          r.Suffix,
+          r.Sex,
+          r.DateOfBirth,
+          r.PlaceOfBirth,
+          r.CivilStatus,
+          r.Citizenship,
+          r.Religion,
+          r.RContactNumber,
+          r.REmail,
+          r.InhabitantType,
+          r.ResidentStatus,
+          r.Mothers_Maiden_Surname,
+          r.Mothers_Maiden_FirstName,
+          r.Mothers_Maiden_MiddleName,
+          r.HouseholdID,
+          h.HouseholdID AS householdId
         FROM Resident r
         LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID
         WHERE r.ResidentID = ?`,
@@ -95,20 +147,41 @@ export class ResidentRepository {
     }
   }
 
-  //Update Resident
+  //Update Resident (all editable fields)
   static async updateResident(id: number, data: any) {
     const conn = await pool.getConnection();
 
     try {
       const result = await conn.query(
-        `UPDATE Resident SET FirstName = ?, MiddleName = ?, LastName = ?, Sex = ?, CivilStatus = ?, ResidentStatus = ? WHERE ResidentID = ?`,
+        `UPDATE Resident SET 
+          FirstName = ?, 
+          MiddleName = ?, 
+          LastName = ?, 
+          Suffix = ?,
+          Sex = ?, 
+          CivilStatus = ?, 
+          Religion = ?,
+          RContactNumber = ?,
+          REmail = ?,
+          ResidentStatus = ?,
+          Mothers_Maiden_Surname = ?,
+          Mothers_Maiden_FirstName = ?,
+          Mothers_Maiden_MiddleName = ?
+        WHERE ResidentID = ?`,
         [
           data.firstName,
           data.middleName ?? null,
           data.lastName,
+          data.suffix ?? null,
           data.sex,
           data.civilStatus,
+          data.religion ?? null,
+          data.contactNumber ?? null,
+          data.email ?? null,
           data.residentStatus,
+          data.mothersMaidenSurname ?? null,
+          data.mothersMaidenFirstName ?? null,
+          data.mothersMaidenMiddleName ?? null,
           id,
         ],
       );
