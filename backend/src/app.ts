@@ -11,6 +11,7 @@ import auditRoutes from "./modules/audit/audit.routes.js";
 import householdNumberRoutes from "./modules/households/householdNumber.routes.js";
 import officialRoutes from "./modules/officials/official.routes.js";
 import barangayInfoRoutes from "./modules/barangay-info/barangayInfo.routes.js";
+import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
 
 const app = express();
 
@@ -18,34 +19,37 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-//Login Route
+//Auth Route (Public)
 app.use("/api/auth", authRoutes);
 
-//Register user
+//User Route (Admin Only)
 app.use("/api/users", userRoutes);
 
-//Resident Route
+//Dashboard Route (Admin/Staff)
+app.use("/api/dashboard", dashboardRoutes);
+
+//Resident Route (Admin/Staff)
 app.use("/api/residents", residentRoutes);
 
-//Resident Archive Route
+//Resident Archive Route (Admin/Staff)
 app.use("/api/archives", residentArchiveRoutes);
 
-//Household Route
+//Household Route (Admin/Staff)
 app.use("/api/households", householdRoutes);
 
-//Household Number Route
+//Household Number Route (Admin/Staff)
 app.use("/api/household-numbers", householdNumberRoutes);
 
-//Family Route
+//Family Route (Admin/Staff)
 app.use("/api/families", familyRoutes);
 
-//Audit Trail Route
+//Audit Trail Route (Admin Only)
 app.use("/api/audit-logs", auditRoutes);
 
 //Official Route (Admin Only)
 app.use("/api/officials", officialRoutes);
 
-//Barangay Info Route
+//Barangay Info Route (Admin Only, GET: Admin/Staff)
 app.use("/api/barangay-info", barangayInfoRoutes);
 
 //Health check route
