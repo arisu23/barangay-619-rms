@@ -47,5 +47,8 @@ credentials.json
 # Electron artifacts
 electron/*.asar
 
+# AI agent toolkit
+.agent/
+
 # Misc
 *.log
