@@ -8,6 +8,22 @@ export class ResidentService {
       throw { status: 400, message: "Missing required resident fields!" };
     }
 
+    //Duplicate resident validation
+    if (data.dateOfBirth) {
+      const duplicate = await ResidentRepository.findDuplicate(
+        data.firstName,
+        data.lastName,
+        data.dateOfBirth
+      );
+
+      if (duplicate) {
+        throw {
+          status: 409,
+          message: `Duplicate resident found: ${duplicate.FirstName} ${duplicate.LastName} (ID: ${duplicate.ResidentID}, Status: ${duplicate.ResidentStatus})`
+        }
+      }
+    }
+
     const residentId = await ResidentRepository.createResident(data);
 
     //Audit Log

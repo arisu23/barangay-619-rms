@@ -197,25 +197,63 @@ export class ResidentRepository {
     const conn = await pool.getConnection();
 
     try {
-      let sql = `SELECT ResidentID, FirstName, LastName, Sex, CivilStatus FROM Resident WHERE 1=1`;
+      let sql = `SELECT r.ResidentID, r.FirstName, r.LastName, r.Sex, r.CivilStatus, r.ResidentStatus, r.HouseholdID 
+                 FROM Resident r WHERE 1=1`;
       const params: any[] = [];
 
+      //Search by name (FirstName OR LastName)
       if (filters.name) {
-        sql += " AND LastName LIKE ?";
-        params.push(`%${filters.name}%`);
+        sql += " AND (r.FirstName LIKE ? OR r.LastName LIKE ?)";
+        params.push(`%${filters.name}%`, `%${filters.name}%`);
       }
 
+      //Filter by sex
       if (filters.sex) {
-        sql += " AND Sex = ?";
+        sql += " AND r.Sex = ?";
         params.push(filters.sex);
       }
 
+      //Filter by civil status
       if (filters.civilStatus) {
-        sql += " AND CivilStatus = ?";
+        sql += " AND r.CivilStatus = ?";
         params.push(filters.civilStatus);
       }
 
+      //Filter by resident status (Active, MovedOut, Deceased)
+      if (filters.status) {
+        sql += " AND r.ResidentStatus = ?";
+        params.push(filters.status);
+      }
+
+      //Filter by household
+      if (filters.householdId) {
+        sql += " AND r.HouseholdID = ?";
+        params.push(Number(filters.householdId));
+      }
+
+      //Filter by inhabitant type
+      if (filters.inhabitantType) {
+        sql += " AND r.InhabitantType = ?";
+        params.push(filters.inhabitantType);
+      }
+
+      sql += " ORDER BY r.LastName ASC";
+
       return await conn.query(sql, params);
+    } finally {
+      conn.release();
+    }
+  }
+
+  //Check for duplicate resident
+  static async findDuplicate(firstName: string, lastName: string, dateOfBirth: string): Promise<any> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT ResidentID, FirstName, LastName, DateOfBirth, ResidentStatus FROM Resident WHERE FirstName = ? AND LastName = ? AND DateOfBirth = ?`,
+        [firstName, lastName, dateOfBirth]
+      );
+      return rows[0] || null;
     } finally {
       conn.release();
     }
