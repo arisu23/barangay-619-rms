@@ -12,6 +12,7 @@ import householdNumberRoutes from "./modules/households/householdNumber.routes.j
 import officialRoutes from "./modules/officials/official.routes.js";
 import barangayInfoRoutes from "./modules/barangay-info/barangayInfo.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
+import backupRoutes from "./modules/backup/backup.routes.js";
 
 const app = express();
 
@@ -51,6 +52,9 @@ app.use("/api/officials", officialRoutes);
 
 //Barangay Info Route (Admin Only, GET: Admin/Staff)
 app.use("/api/barangay-info", barangayInfoRoutes);
+
+//Backup Route (Admin Only)
+app.use("/api/backup", backupRoutes);
 
 //Health check route
 app.get("/api/health", (_req, res) => {
