@@ -13,6 +13,7 @@ import officialRoutes from "./modules/officials/official.routes.js";
 import barangayInfoRoutes from "./modules/barangay-info/barangayInfo.routes.js";
 import dashboardRoutes from "./modules/dashboard/dashboard.routes.js";
 import backupRoutes from "./modules/backup/backup.routes.js";
+import reportRoutes from "./modules/reports/report.routes.js";
 
 const app = express();
 
@@ -55,6 +56,9 @@ app.use("/api/barangay-info", barangayInfoRoutes);
 
 //Backup Route (Admin Only)
 app.use("/api/backup", backupRoutes);
+
+//Report Route (Admin/Staff)
+app.use("/api/reports", reportRoutes);
 
 //Health check route
 app.get("/api/health", (_req, res) => {

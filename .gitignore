@@ -52,3 +52,6 @@ electron/*.asar
 
 # Misc
 *.log
+
+# Project documentation (original Word doc kept separately)
+FINAL_DOCUMENT.txt
