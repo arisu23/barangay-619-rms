@@ -1,0 +1,259 @@
+import type { LucideIcon } from 'lucide-react';
+
+// ==========================================
+// API Response Wrapper
+// ==========================================
+export interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
+
+// ==========================================
+// Auth
+// ==========================================
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+}
+
+export interface AuthUser {
+  userId: number;
+  role: 'Admin' | 'Staff';
+}
+
+// ==========================================
+// User Account
+// ==========================================
+export interface User {
+  UserID: number;
+  Username: string;
+  Role: 'Admin' | 'Staff';
+  Status: 'Active' | 'Inactive';
+  CreatedAt?: string;
+}
+
+// ==========================================
+// Resident
+// ==========================================
+export interface Resident {
+  ResidentID: number;
+  FirstName: string;
+  MiddleName?: string;
+  LastName: string;
+  Suffix?: string;
+  Sex: 'Male' | 'Female';
+  DateOfBirth: string;
+  PlaceOfBirth?: string;
+  CivilStatus: string;
+  Citizenship: string;
+  Religion?: string;
+  RContactNumber?: string;
+  REmail?: string;
+  InhabitantType?: string;
+  ResidentStatus: 'Active' | 'Deceased' | 'MovedOut';
+  Mothers_Maiden_Surname?: string;
+  Mothers_Maiden_FirstName?: string;
+  Mothers_Maiden_MiddleName?: string;
+  HouseholdID?: number;
+  householdId?: number;
+}
+
+// Slim version returned by getAllResidents
+export interface ResidentListItem {
+  ResidentID: number;
+  FirstName: string;
+  LastName: string;
+  Sex: string;
+  ResidentStatus: string;
+  HouseholdID?: number;
+}
+
+export interface CreateResidentData {
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  suffix?: string;
+  sex: string;
+  dateOfBirth: string;
+  placeOfBirth: string;
+  civilStatus: string;
+  citizenship: string;
+  religion?: string;
+  contactNumber?: string;
+  email?: string;
+  inhabitantType: string;
+  mothersMaidenSurname?: string;
+  mothersMaidenFirstName?: string;
+  mothersMaidenMiddleName?: string;
+  householdId?: number;
+  address: {
+    unitRoomFloor?: string;
+    buildingName?: string;
+    lotBlockPhase?: string;
+    houseNumber: string;
+    street: string;
+    barangay: string;
+    municipality: string;
+  };
+}
+
+// ==========================================
+// Household & Family
+// ==========================================
+export interface Household {
+  HouseholdID: number;
+  HouseholdNumber?: string;
+  Address?: string;
+  Status?: string;
+}
+
+export interface HouseholdNumber {
+  HouseNumberID: number;
+  HouseNumber: string;
+  Status?: string;
+}
+
+export interface Family {
+  FamilyID: number;
+  HouseholdID: number;
+  HeadResidentID: number;
+  HeadName?: string;
+  Members?: FamilyMember[];
+}
+
+export interface FamilyMember {
+  ResidentID: number;
+  FirstName: string;
+  LastName: string;
+  Relationship: string;
+}
+
+// ==========================================
+// Officials
+// ==========================================
+export interface Official {
+  OfficialID: number;
+  ResidentID?: number;
+  FirstName: string;
+  LastName: string;
+  Position: string;
+  TermStart?: string;
+  TermEnd?: string;
+  BStatus?: string;
+}
+
+// ==========================================
+// Barangay Info
+// ==========================================
+export interface BarangayInfo {
+  InfoID: number;
+  BarangayName: string;
+  Municipality: string;
+  Province: string;
+  Region: string;
+  ZipCode: string;
+  ContactNumber?: string;
+  Email?: string;
+  Logo?: string;
+}
+
+// ==========================================
+// Audit Trail
+// ==========================================
+export interface AuditLog {
+  LogID: number;
+  UserID: number;
+  Username?: string;
+  Action: string;
+  OldValue?: string;
+  NewValue?: string;
+  Timestamp: string;
+}
+
+// ==========================================
+// Backup & Restore
+// ==========================================
+export interface BackupLog {
+  BackupID: number;
+  FileName: string;
+  FilePath: string;
+  BackupType: string;
+  CreatedAt: string;
+  CreatedBy?: number;
+}
+
+// ==========================================
+// Dashboard
+// ==========================================
+export interface DashboardStats {
+  stats: {
+    totalPopulation: number;
+    registeredVoters: number;
+    male: number;
+    female: number;
+    totalHouseholds: number;
+    totalFamilies: number;
+  };
+  classification: {
+    children: number;
+    youth: number;
+    seniorCitizen: number;
+    pwd: number;
+    employed: number;
+    unemployed: number;
+  };
+  logs: {
+    newResidents: { monthly: number; yearly: number };
+    movedOut: { monthly: number; yearly: number };
+    deceased: { monthly: number; yearly: number };
+  };
+}
+
+// ==========================================
+// Reports
+// ==========================================
+export interface DemographicsSummary {
+  totalPopulation: number;
+  categories: DemographicCategory[];
+}
+
+export interface DemographicCategory {
+  category: string;
+  count: number;
+  percentage: number;
+}
+
+// ==========================================
+// UI-specific types (used by components)
+// ==========================================
+export interface StatData {
+  id: string;
+  title: string;
+  value: string;
+  icon: LucideIcon;
+  colorClass: string;
+  bgClass: string;
+}
+
+export interface ChartData {
+  name: string;
+  value: number;
+  color: string;
+}
+
+// ==========================================
+// Archive
+// ==========================================
+export interface ArchivedResident {
+  ResidentID: number;
+  FirstName: string;
+  LastName: string;
+  Sex: string;
+  ResidentStatus: string;
+  DateofDeath?: string;
+}
