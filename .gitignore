@@ -55,3 +55,15 @@ electron/*.asar
 
 # Project documentation (original Word doc kept separately)
 FINAL_DOCUMENT.txt
+
+#Claude agents
+.claude
+
+#Project Documentation
+project-documentation.md
+
+#Task
+task-status.md
+
+#Github copilot files
+.github

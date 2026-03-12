@@ -99,7 +99,7 @@ export class ResidentRepository {
 
     try {
       const rows = await conn.query(
-        `SELECT r.ResidentID, r.FirstName, r.LastName, r.Sex, r.ResidentStatus, h.HouseholdID FROM Resident r LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID WHERE r.ResidentStatus = 'Active' ORDER BY r.LastName`,
+        `SELECT r.ResidentID, r.FirstName, r.LastName, r.Sex, r.DateOfBirth, r.CivilStatus, r.ResidentStatus, h.HouseholdID FROM Resident r LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID WHERE r.ResidentStatus = 'Active' ORDER BY r.LastName`,
       );
 
       return rows;
@@ -192,14 +192,18 @@ export class ResidentRepository {
     }
   }
 
-  //Search Residents
-  static async searchResidents(filters: any) {
+  //Search Residents (enhanced per FR3 — supports name, sex, status, household, address)
+  static async searchResidents(filters: Record<string, string>) {
     const conn = await pool.getConnection();
 
     try {
-      let sql = `SELECT r.ResidentID, r.FirstName, r.LastName, r.Sex, r.CivilStatus, r.ResidentStatus, r.HouseholdID 
-                 FROM Resident r WHERE 1=1`;
-      const params: any[] = [];
+      let sql = `SELECT DISTINCT r.ResidentID, r.FirstName, r.LastName, r.Sex,
+                        r.CivilStatus, r.ResidentStatus, r.HouseholdID
+                 FROM Resident r
+                 LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID
+                 LEFT JOIN Address a ON h.AddressID = a.AddressID
+                 WHERE 1=1`;
+      const params: (string | number)[] = [];
 
       //Search by name (FirstName OR LastName)
       if (filters.name) {
@@ -235,6 +239,12 @@ export class ResidentRepository {
       if (filters.inhabitantType) {
         sql += " AND r.InhabitantType = ?";
         params.push(filters.inhabitantType);
+      }
+
+      //Filter by address (street name)
+      if (filters.address) {
+        sql += " AND a.Street_Alley_Zone LIKE ?";
+        params.push(`%${filters.address}%`);
       }
 
       sql += " ORDER BY r.LastName ASC";

@@ -1,4 +1,4 @@
-import type { LucideIcon } from 'lucide-react';
+import type { LucideIcon } from "lucide-react";
 
 // ==========================================
 // API Response Wrapper
@@ -23,7 +23,7 @@ export interface LoginResponse {
 
 export interface AuthUser {
   userId: number;
-  role: 'Admin' | 'Staff';
+  role: "Admin" | "Staff";
 }
 
 // ==========================================
@@ -32,8 +32,8 @@ export interface AuthUser {
 export interface User {
   UserID: number;
   Username: string;
-  Role: 'Admin' | 'Staff';
-  Status: 'Active' | 'Inactive';
+  Role: "Admin" | "Staff";
+  Status: "Active" | "Inactive";
   CreatedAt?: string;
 }
 
@@ -46,7 +46,7 @@ export interface Resident {
   MiddleName?: string;
   LastName: string;
   Suffix?: string;
-  Sex: 'Male' | 'Female';
+  Sex: "Male" | "Female";
   DateOfBirth: string;
   PlaceOfBirth?: string;
   CivilStatus: string;
@@ -55,7 +55,7 @@ export interface Resident {
   RContactNumber?: string;
   REmail?: string;
   InhabitantType?: string;
-  ResidentStatus: 'Active' | 'Deceased' | 'MovedOut';
+  ResidentStatus: "Active" | "Deceased" | "MovedOut";
   Mothers_Maiden_Surname?: string;
   Mothers_Maiden_FirstName?: string;
   Mothers_Maiden_MiddleName?: string;
@@ -69,6 +69,8 @@ export interface ResidentListItem {
   FirstName: string;
   LastName: string;
   Sex: string;
+  DateOfBirth?: string;
+  CivilStatus?: string;
   ResidentStatus: string;
   HouseholdID?: number;
 }
@@ -105,16 +107,59 @@ export interface CreateResidentData {
 // ==========================================
 // Household & Family
 // ==========================================
+
+/** Shape returned by GET /api/households */
+export interface HouseholdListItem {
+  HouseholdID: number;
+  householdNumber: string;
+  householdStatus: string;
+  HouseNumber: string;
+  Street_Alley_Zone: string;
+  Barangay: string;
+  memberCount: number;
+}
+
+/** Shape returned by GET /api/households/:id */
+export interface HouseholdDetail {
+  HouseholdID: number;
+  householdNumber: string;
+  householdStatus: string;
+  AddressID: number;
+  HouseNumber: string;
+  Street_Alley_Zone: string;
+  Barangay: string;
+  Municipality: string;
+  residents: {
+    ResidentID: number;
+    FirstName: string;
+    LastName: string;
+    Sex: string;
+    ResidentStatus: string;
+  }[];
+}
+
+export interface HouseholdNumber {
+  HouseID: number;
+  HouseholdNumberName: string;
+  Status: string;
+}
+
+/** Shape returned by GET /api/families/household/:id */
+export interface FamilyRecord {
+  FamilyHeadID: number;
+  HeadType: "Primary" | "Secondary";
+  ResidentID: number;
+  FirstName: string;
+  LastName: string;
+  DateOfBirth: string;
+  RelationshipToFamilyHead: string | null;
+}
+
+// Keep backward-compat alias
 export interface Household {
   HouseholdID: number;
   HouseholdNumber?: string;
   Address?: string;
-  Status?: string;
-}
-
-export interface HouseholdNumber {
-  HouseNumberID: number;
-  HouseNumber: string;
   Status?: string;
 }
 
