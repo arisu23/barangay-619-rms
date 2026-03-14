@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Box,
   Paper,
@@ -69,6 +69,14 @@ import {
   Cell,
 } from "recharts";
 import type { TransitionProps } from "@mui/material/transitions";
+import { reportService } from "../services/reportService";
+import { notify } from "../utils/notify";
+import type {
+  ReportDemographicsSummary,
+  ReportDemographicsResident,
+  ReportFormARecord,
+  ReportFormCData,
+} from "../types";
 
 const Transition = React.forwardRef(function Transition(
   props: TransitionProps & {
@@ -106,6 +114,35 @@ interface ReportCategory {
   icon: LucideIcon;
   color: string;
 }
+
+const toResidentRecord = (
+  record: ReportFormARecord,
+  index: number,
+): ResidentRecord => {
+  const categories = (record.Categories || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  return {
+    id: index + 1,
+    lastName: record.LastName,
+    firstName: record.FirstName,
+    middleName: record.MiddleName || "",
+    ext: record.Suffix || "",
+    pob: record.PlaceOfBirth || "",
+    dob: record.DateOfBirth || "",
+    age: Number(record.Age) || 0,
+    sex: record.Sex,
+    civilStatus: record.CivilStatus,
+    citizenship: record.Citizenship,
+    occupation: record.Occupation || "",
+    sector: categories[0] || "",
+    household: record.Household || "Unassigned",
+    street: record.Street || "",
+    categories,
+  };
+};
 
 // --- Mock Data ---
 // Extended mock data for the detailed demographics breakdown
@@ -544,14 +581,41 @@ const FormA_Preview = ({ residents }: { residents: ResidentRecord[] }) => (
   </Box>
 );
 
-const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
-  const getBracketCount = (min: number, max: number, sex?: string) => {
+const FormC_Preview = ({
+  residents,
+  formCData,
+}: {
+  residents: ResidentRecord[];
+  formCData?: ReportFormCData | null;
+}) => {
+  const getBracketCount = (
+    label: string,
+    min: number,
+    max: number,
+    sex?: string,
+  ) => {
+    if (formCData) {
+      const row = formCData.ageBrackets.find((item) => item.bracket === label);
+      if (!row) return 0;
+      if (sex === "Male") return row.male;
+      if (sex === "Female") return row.female;
+      return row.total;
+    }
+
     return residents.filter(
       (r) => (sex ? r.sex === sex : true) && r.age >= min && r.age <= max,
     ).length;
   };
 
   const getSectorCount = (sector: string, sex?: string) => {
+    if (formCData) {
+      const row = formCData.sectors.find((item) => item.sector === sector);
+      if (!row) return 0;
+      if (sex === "Male") return row.male;
+      if (sex === "Female") return row.female;
+      return row.total;
+    }
+
     return residents.filter(
       (r) =>
         (sex ? r.sex === sex : true) &&
@@ -561,22 +625,50 @@ const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
   };
 
   const getCivilStatusCount = (status: string, sex?: string) => {
+    if (formCData) {
+      const rows = formCData.civilStatus.filter(
+        (item) => item.status === status,
+      );
+      if (sex) {
+        return rows
+          .filter((item) => item.Sex === sex)
+          .reduce((total, item) => total + Number(item.total), 0);
+      }
+      return rows.reduce((total, item) => total + Number(item.total), 0);
+    }
+
     return residents.filter(
       (r) => (sex ? r.sex === sex : true) && r.civilStatus === status,
     ).length;
   };
 
   const getCitizenshipCount = (citizenship: string, sex?: string) => {
+    if (formCData) {
+      const rows = formCData.citizenship.filter(
+        (item) => item.citizenship === citizenship,
+      );
+      if (sex) {
+        return rows
+          .filter((item) => item.Sex === sex)
+          .reduce((total, item) => total + Number(item.total), 0);
+      }
+      return rows.reduce((total, item) => total + Number(item.total), 0);
+    }
+
     if (citizenship === "Filipino") {
       return residents.filter(
         (r) => (sex ? r.sex === sex : true) && r.citizenship === "Filipino",
       ).length;
-    } else {
-      return residents.filter(
-        (r) => (sex ? r.sex === sex : true) && r.citizenship !== "Filipino",
-      ).length;
     }
+
+    return residents.filter(
+      (r) => (sex ? r.sex === sex : true) && r.citizenship !== "Filipino",
+    ).length;
   };
+
+  const sectorsToDisplay = formCData?.sectors?.length
+    ? formCData.sectors.map((item) => item.sector)
+    : sectorList;
 
   return (
     <Box
@@ -626,17 +718,19 @@ const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
         <Grid size={{ xs: 12 }} sx={{ mt: 1 }}>
           <Typography variant="body2">
             <strong>Total No. of Barangay Inhabitants:</strong>{" "}
-            {residents.length}
+            {formCData?.summary.totalInhabitants ?? residents.length}
           </Typography>
         </Grid>
         <Grid size={{ xs: 12 }}>
           <Typography variant="body2">
-            <strong>Total No. of Households:</strong> 32
+            <strong>Total No. of Households:</strong>{" "}
+            {formCData?.summary.totalHouseholds ?? 0}
           </Typography>
         </Grid>
         <Grid size={{ xs: 12 }}>
           <Typography variant="body2">
-            <strong>Total No. of Families:</strong> 127
+            <strong>Total No. of Families:</strong>{" "}
+            {formCData?.summary.totalFamilies ?? 0}
           </Typography>
         </Grid>
       </Grid>
@@ -705,10 +799,16 @@ const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
                   {bracket.label}
                 </TableCell>
                 <TableCell align="center" sx={{ border: "1px solid #e2e8f0" }}>
-                  {getBracketCount(bracket.range[0], bracket.range[1], "Male")}
+                  {getBracketCount(
+                    bracket.label,
+                    bracket.range[0],
+                    bracket.range[1],
+                    "Male",
+                  )}
                 </TableCell>
                 <TableCell align="center" sx={{ border: "1px solid #e2e8f0" }}>
                   {getBracketCount(
+                    bracket.label,
                     bracket.range[0],
                     bracket.range[1],
                     "Female",
@@ -718,7 +818,11 @@ const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
                   align="center"
                   sx={{ border: "1px solid #e2e8f0", fontWeight: "bold" }}
                 >
-                  {getBracketCount(bracket.range[0], bracket.range[1])}
+                  {getBracketCount(
+                    bracket.label,
+                    bracket.range[0],
+                    bracket.range[1],
+                  )}
                 </TableCell>
                 <TableCell sx={{ border: "1px solid #e2e8f0" }}></TableCell>
               </TableRow>
@@ -735,7 +839,7 @@ const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
                 Population by Sector:
               </TableCell>
             </TableRow>
-            {sectorList.map((sector, i) => (
+            {sectorsToDisplay.map((sector, i) => (
               <TableRow key={i}>
                 <TableCell
                   sx={{
@@ -799,6 +903,9 @@ const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
               <TableCell align="center" sx={{ border: "1px solid #e2e8f0" }}>
                 {getCivilStatusCount("Married", "Male")}
               </TableCell>
+              <TableCell align="center" sx={{ border: "1px solid #e2e8f0" }}>
+                {getCivilStatusCount("Married", "Female")}
+              </TableCell>
               <TableCell
                 align="center"
                 sx={{ border: "1px solid #e2e8f0", fontWeight: "bold" }}
@@ -819,6 +926,9 @@ const FormC_Preview = ({ residents }: { residents: ResidentRecord[] }) => {
               </TableCell>
               <TableCell align="center" sx={{ border: "1px solid #e2e8f0" }}>
                 {getCitizenshipCount("Filipino", "Male")}
+              </TableCell>
+              <TableCell align="center" sx={{ border: "1px solid #e2e8f0" }}>
+                {getCitizenshipCount("Filipino", "Female")}
               </TableCell>
               <TableCell
                 align="center"
@@ -989,80 +1099,123 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
   category,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [rows, setRows] = useState<ReportDemographicsResident[]>([]);
+  const [totalRows, setTotalRows] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const filteredResidents = useMemo(() => {
-    if (!category) return [];
+  useEffect(() => {
+    if (!open) return;
+    setSearchQuery("");
+    setPage(1);
+  }, [category?.id, open]);
 
-    // Logic to filter based on category id
-    return residentsData.filter((r) => {
-      const matchesCategory =
-        category.id === "inhabitants"
-          ? true
-          : category.id === "voters"
-            ? r.occupation !== "Retired" // Mock logic
-            : category.id === "seniors"
-              ? r.age >= 60
-              : category.id === "pwd"
-                ? r.categories.includes("PWD")
-                : category.id === "solo"
-                  ? r.categories.includes("Solo Parent")
-                  : category.id === "indigent"
-                    ? r.categories.includes("Indigent")
-                    : true;
+  const fetchBreakdown = useCallback(async () => {
+    if (!open || !category) return;
 
-      const matchesSearch =
-        r.firstName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.lastName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        r.household.toLowerCase().includes(searchQuery.toLowerCase());
+    setIsLoading(true);
+    try {
+      const response = await reportService.getDemographicsByCategory(
+        category.id,
+        {
+          search: searchQuery,
+          page,
+          limit: rowsPerPage,
+        },
+      );
+      setRows(response.data);
+      setTotalRows(response.total);
+    } catch {
+      notify.error(`Failed to load ${category.label} breakdown.`);
+      setRows([]);
+      setTotalRows(0);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [open, category, searchQuery, page, rowsPerPage]);
 
-      return matchesCategory && matchesSearch;
-    });
-  }, [category, searchQuery]);
+  useEffect(() => {
+    fetchBreakdown();
+  }, [fetchBreakdown]);
 
   if (!category) return null;
   const Icon = category.icon;
 
-  const handleExportCSV = () => {
-    const headers = [
-      "First Name",
-      "Last Name",
-      "Age",
-      "Gender",
-      "Household",
-      "Street",
-    ];
-    const rows = filteredResidents.map((r) => [
-      r.firstName,
-      r.lastName,
-      r.age,
-      r.sex,
-      r.household,
-      r.street,
-    ]);
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      headers.join(",") +
-      "\n" +
-      rows.map((e) => e.join(",")).join("\n");
+  const handleExportCSV = async () => {
+    try {
+      const response = await reportService.getDemographicsByCategory(
+        category.id,
+        {
+          search: searchQuery,
+          page: 1,
+          limit: Math.max(totalRows, rowsPerPage, 1),
+        },
+      );
 
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute(
-      "download",
-      `${category.label.replace(/\s+/g, "_")}_Breakdown.csv`,
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const headers = [
+        "First Name",
+        "Last Name",
+        "Age",
+        "Gender",
+        "Household",
+        "Street",
+      ];
+      const csvRows = response.data.map((resident) => [
+        resident.FirstName,
+        resident.LastName,
+        resident.Age,
+        resident.Sex,
+        resident.Household ?? "",
+        resident.Street ?? "",
+      ]);
+
+      const csvContent =
+        "data:text/csv;charset=utf-8," +
+        headers.join(",") +
+        "\n" +
+        csvRows.map((entry) => entry.join(",")).join("\n");
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute(
+        "download",
+        `${category.label.replace(/\s+/g, "_")}_Breakdown.csv`,
+      );
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      notify.success("CSV exported successfully.");
+    } catch {
+      notify.error("Failed to export CSV.");
+    }
   };
 
   const handleExportPDF = () => {
-    // In a real environment we would use jspdf/html2canvas
-    alert(`Exporting ${category.label} Breakdown to PDF...`);
-    window.print(); // Fallback for simulation
+    notify.info("Opening print view...");
+    window.print();
+  };
+
+  const handleDownloadResidentPdf = async (
+    residentId: number,
+    firstName: string,
+    lastName: string,
+  ) => {
+    try {
+      const blob = await reportService.downloadResidentPdf(residentId);
+      const fileUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = `${lastName}_${firstName}_Profile.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(fileUrl);
+      notify.success("Resident PDF downloaded.");
+    } catch {
+      notify.error("Failed to download resident PDF.");
+    }
   };
 
   return (
@@ -1177,7 +1330,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                     variant="h3"
                     sx={{ fontWeight: 900, color: "#1e293b" }}
                   >
-                    {filteredResidents.length}
+                    {totalRows}
                   </Typography>
                   <Typography
                     variant="body1"
@@ -1191,7 +1344,10 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                   placeholder="Search by name or household..."
                   size="small"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
                   sx={{
                     width: 350,
                     "& .MuiOutlinedInput-root": {
@@ -1288,47 +1444,77 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                         >
                           CITIZENSHIP
                         </TableCell>
+                        <TableCell
+                          sx={{
+                            bgcolor: "#f8fafc",
+                            fontWeight: 800,
+                            color: "#64748b",
+                            textAlign: "center",
+                          }}
+                        >
+                          ACTIONS
+                        </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {filteredResidents
-                        .slice(
-                          page * rowsPerPage,
-                          page * rowsPerPage + rowsPerPage,
-                        )
-                        .map((res) => (
-                          <TableRow key={res.id} hover>
+                      {isLoading && (
+                        <TableRow>
+                          <TableCell colSpan={8} align="center" sx={{ py: 8 }}>
+                            <Typography variant="body1" color="text.secondary">
+                              Loading records...
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                      {!isLoading &&
+                        rows.map((res) => (
+                          <TableRow key={res.ResidentID} hover>
                             <TableCell
                               sx={{ fontWeight: 700, color: "#1e293b" }}
                             >
-                              {res.lastName}, {res.firstName}
+                              {res.LastName}, {res.FirstName}
                             </TableCell>
-                            <TableCell>{res.age}</TableCell>
+                            <TableCell>{res.Age}</TableCell>
                             <TableCell>
                               <Chip
-                                label={res.sex}
+                                label={res.Sex}
                                 size="small"
                                 sx={{
                                   fontWeight: 800,
                                   fontSize: "0.65rem",
                                   bgcolor:
-                                    res.sex === "Male" ? "#eff6ff" : "#fdf2f8",
+                                    res.Sex === "Male" ? "#eff6ff" : "#fdf2f8",
                                   color:
-                                    res.sex === "Male" ? "#1d4ed8" : "#be185d",
+                                    res.Sex === "Male" ? "#1d4ed8" : "#be185d",
                                 }}
                               />
                             </TableCell>
                             <TableCell sx={{ fontWeight: 600 }}>
-                              {res.household}
+                              {res.Household ?? "-"}
                             </TableCell>
-                            <TableCell>{res.street}</TableCell>
-                            <TableCell>{res.civilStatus}</TableCell>
-                            <TableCell>{res.citizenship}</TableCell>
+                            <TableCell>{res.Street ?? "-"}</TableCell>
+                            <TableCell>{res.CivilStatus}</TableCell>
+                            <TableCell>{res.Citizenship}</TableCell>
+                            <TableCell align="center">
+                              <IconButton
+                                size="small"
+                                color="primary"
+                                onClick={() =>
+                                  handleDownloadResidentPdf(
+                                    res.ResidentID,
+                                    res.FirstName,
+                                    res.LastName,
+                                  )
+                                }
+                              >
+                                <Download size={17} />
+                              </IconButton>
+                            </TableCell>
                           </TableRow>
                         ))}
-                      {filteredResidents.length === 0 && (
+                      {!isLoading && rows.length === 0 && (
                         <TableRow>
-                          <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
+                          <TableCell colSpan={8} align="center" sx={{ py: 10 }}>
                             <Typography variant="body1" color="text.secondary">
                               No records found.
                             </Typography>
@@ -1341,13 +1527,13 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                 <TablePagination
                   rowsPerPageOptions={[10, 25, 50]}
                   component="div"
-                  count={filteredResidents.length}
+                  count={totalRows}
                   rowsPerPage={rowsPerPage}
-                  page={page}
-                  onPageChange={(e, newPage) => setPage(newPage)}
+                  page={Math.max(page - 1, 0)}
+                  onPageChange={(_e, newPage) => setPage(newPage + 1)}
                   onRowsPerPageChange={(e) => {
                     setRowsPerPage(parseInt(e.target.value, 10));
-                    setPage(0);
+                    setPage(1);
                   }}
                 />
               </Paper>
@@ -1367,69 +1553,112 @@ const Reports: React.FC = () => {
   const [selectedReport, setSelectedReport] = useState<ReportCategory | null>(
     null,
   );
+  const [demographicsSummary, setDemographicsSummary] =
+    useState<ReportDemographicsSummary | null>(null);
+  const [formAResidents, setFormAResidents] = useState<ResidentRecord[]>([]);
+  const [formCData, setFormCData] = useState<ReportFormCData | null>(null);
+  const [isDemographicsLoading, setIsDemographicsLoading] = useState(false);
+  const [isRbiLoading, setIsRbiLoading] = useState(false);
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
   };
+
+  const fetchDemographics = useCallback(async () => {
+    setIsDemographicsLoading(true);
+    try {
+      const data = await reportService.getDemographicsSummary();
+      setDemographicsSummary(data);
+    } catch {
+      notify.error("Failed to load demographics report.");
+    } finally {
+      setIsDemographicsLoading(false);
+    }
+  }, []);
+
+  const fetchRbiData = useCallback(async () => {
+    setIsRbiLoading(true);
+    try {
+      const [formA, formC] = await Promise.all([
+        reportService.getFormAData(),
+        reportService.getFormCData(),
+      ]);
+      setFormAResidents(formA.map(toResidentRecord));
+      setFormCData(formC);
+    } catch {
+      notify.error("Failed to load RBI report data.");
+    } finally {
+      setIsRbiLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDemographics();
+    fetchRbiData();
+  }, [fetchDemographics, fetchRbiData]);
 
   const stats = [
     {
       id: "inhabitants",
       label: "Total Inhabitants",
-      value: "3,567",
+      value: (demographicsSummary?.stats.inhabitants ?? 0).toLocaleString(),
       icon: Users,
       color: "#3b82f6",
     },
     {
       id: "household",
       label: "Total Household",
-      value: "32",
+      value: (demographicsSummary?.stats.households ?? 0).toLocaleString(),
       icon: Home,
       color: "#8b5cf6",
     },
     {
       id: "families",
       label: "Families Recorded",
-      value: "127",
+      value: (demographicsSummary?.stats.families ?? 0).toLocaleString(),
       icon: UsersRound,
       color: "#f59e0b",
     },
     {
       id: "voters",
       label: "Registered Voters",
-      value: "2,789",
+      value: (demographicsSummary?.stats.voters ?? 0).toLocaleString(),
       icon: Vote,
       color: "#10b981",
     },
     {
       id: "seniors",
       label: "Senior Citizens",
-      value: "517",
+      value: (demographicsSummary?.stats.seniors ?? 0).toLocaleString(),
       icon: Heart,
       color: "#ef4444",
     },
     {
       id: "pwd",
       label: "PWD Count",
-      value: "50",
+      value: (demographicsSummary?.stats.pwd ?? 0).toLocaleString(),
       icon: Accessibility,
       color: "#06b6d4",
     },
     {
       id: "solo",
       label: "Solo Parents",
-      value: "120",
+      value: (demographicsSummary?.stats.soloParent ?? 0).toLocaleString(),
       icon: UserSquare,
       color: "#ec4899",
     },
     {
       id: "indigent",
       label: "Indigent Records",
-      value: "320",
+      value: (demographicsSummary?.stats.indigent ?? 0).toLocaleString(),
       icon: ShieldAlert,
       color: "#6366f1",
     },
   ];
+
+  const ageChartData = demographicsSummary?.charts.ageGroups ?? ageGroupData;
+  const employmentChartData =
+    demographicsSummary?.charts.employment ?? employmentData;
 
   const templates = [
     {
@@ -1563,6 +1792,14 @@ const Reports: React.FC = () => {
                 overflowY: "auto",
               }}
             >
+              {isDemographicsLoading && (
+                <Typography
+                  variant="body2"
+                  sx={{ mb: 2, color: "text.secondary", fontWeight: 600 }}
+                >
+                  Loading demographics data...
+                </Typography>
+              )}
               <Grid container spacing={3} sx={{ mb: 6 }}>
                 {stats.map((stat, i) => (
                   <Grid size={{ xs: 12, md: 6 }} key={i}>
@@ -1635,7 +1872,7 @@ const Reports: React.FC = () => {
                     Age Group Distribution
                   </Typography>
                   <ResponsiveContainer width="100%" height="90%">
-                    <BarChart data={ageGroupData}>
+                    <BarChart data={ageChartData}>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         vertical={false}
@@ -1645,7 +1882,7 @@ const Reports: React.FC = () => {
                       <YAxis axisLine={false} tickLine={false} />
                       <RechartsTooltip cursor={{ fill: "#f8fafc" }} />
                       <Bar dataKey="value" radius={[8, 8, 0, 0]}>
-                        {ageGroupData.map((entry, index) => (
+                        {ageChartData.map((_entry, index) => (
                           <Cell
                             key={index}
                             fill={COLORS[index % COLORS.length]}
@@ -1663,7 +1900,7 @@ const Reports: React.FC = () => {
                     Employment Breakdown
                   </Typography>
                   <ResponsiveContainer width="100%" height="90%">
-                    <BarChart layout="vertical" data={employmentData}>
+                    <BarChart layout="vertical" data={employmentChartData}>
                       <CartesianGrid
                         strokeDasharray="3 3"
                         horizontal={false}
@@ -1679,7 +1916,7 @@ const Reports: React.FC = () => {
                       />
                       <RechartsTooltip />
                       <Bar dataKey="value" radius={[0, 8, 8, 0]}>
-                        {employmentData.map((entry, index) => (
+                        {employmentChartData.map((entry, index) => (
                           <Cell key={index} fill={entry.color} />
                         ))}
                       </Bar>
@@ -1733,16 +1970,41 @@ const Reports: React.FC = () => {
                   </IconButton>
                 </Box>
 
+                {isRbiLoading && (
+                  <Typography
+                    variant="body2"
+                    sx={{ mb: 2, color: "text.secondary", fontWeight: 600 }}
+                  >
+                    Loading RBI data...
+                  </Typography>
+                )}
+
                 <Zoom in={true} key={rbiTemplate}>
                   <Box sx={{ width: "100%", maxWidth: "8.5in" }}>
                     {rbiTemplate === "Form A" && (
-                      <FormA_Preview residents={residentsData} />
+                      <FormA_Preview
+                        residents={
+                          formAResidents.length ? formAResidents : residentsData
+                        }
+                      />
                     )}
                     {rbiTemplate === "Form C" && (
-                      <FormC_Preview residents={residentsData} />
+                      <FormC_Preview
+                        residents={
+                          formAResidents.length ? formAResidents : residentsData
+                        }
+                        formCData={formCData}
+                      />
                     )}
                     {rbiTemplate === "Cert" && (
-                      <Certification_Preview inhabitantsCount={3567} />
+                      <Certification_Preview
+                        inhabitantsCount={
+                          demographicsSummary?.stats.inhabitants ??
+                          formCData?.summary.totalInhabitants ??
+                          formAResidents.length ??
+                          0
+                        }
+                      />
                     )}
                   </Box>
                 </Zoom>

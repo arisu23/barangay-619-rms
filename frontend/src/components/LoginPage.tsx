@@ -11,10 +11,11 @@ import {
 import { Eye, EyeOff, Lock, User } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import brgyLogo from "../assets/img/brgy_logo.jpg";
+import { useBarangayLogo } from "../hooks/useBarangayLogo";
 import { notify } from "../utils/notify";
 
 const LoginPage: React.FC = () => {
+  const { logoSrc } = useBarangayLogo();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -71,7 +72,7 @@ const LoginPage: React.FC = () => {
         }}
       >
         <img
-          src={brgyLogo}
+          src={logoSrc}
           alt="Barangay Logo"
           style={{
             width: 220,

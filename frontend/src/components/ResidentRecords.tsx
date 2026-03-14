@@ -118,6 +118,10 @@ const ResidentRecords: React.FC = () => {
   const [isHouseholdsLoading, setIsHouseholdsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [page, setPage] = useState(1);
+  const rowsPerPage = 10;
+  const [familyPage, setFamilyPage] = useState(1);
+  const familyRowsPerPage = 10;
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isAddHouseholdOpen, setIsAddHouseholdOpen] = useState(false);
@@ -155,6 +159,7 @@ const ResidentRecords: React.FC = () => {
     setActiveTab(newValue);
     setSearchQuery("");
     setSelectedCategory("All");
+    setPage(1);
   };
 
   // Fetch residents from API
@@ -323,11 +328,13 @@ const ResidentRecords: React.FC = () => {
   const handleFilterMenuClose = (category?: string) => {
     if (typeof category === "string") {
       setSelectedCategory(category);
+      setPage(1);
     }
     setFilterAnchorEl(null);
   };
 
   const handleViewFamilyDetail = () => {
+    setFamilyPage(1);
     setIsFamilyDetailOpen(true);
     setFamilyAnchorEl(null);
   };
@@ -372,6 +379,50 @@ const ResidentRecords: React.FC = () => {
     (h) =>
       h.householdNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
       h.Street_Alley_Zone.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const residentTotalPages = Math.max(
+    1,
+    Math.ceil(filteredResidents.length / rowsPerPage),
+  );
+  const householdTotalPages = Math.max(
+    1,
+    Math.ceil(filteredHouseholds.length / rowsPerPage),
+  );
+
+  const currentTotalPages =
+    activeTab === 0 ? residentTotalPages : householdTotalPages;
+
+  useEffect(() => {
+    if (page > currentTotalPages) {
+      setPage(currentTotalPages);
+    }
+  }, [page, currentTotalPages]);
+
+  const paginatedResidents = filteredResidents.slice(
+    (page - 1) * rowsPerPage,
+    page * rowsPerPage,
+  );
+
+  const paginatedHouseholds = filteredHouseholds.slice(
+    (page - 1) * rowsPerPage,
+    page * rowsPerPage,
+  );
+
+  const familyTotalPages = Math.max(
+    1,
+    Math.ceil(familyRecords.length / familyRowsPerPage),
+  );
+
+  useEffect(() => {
+    if (familyPage > familyTotalPages) {
+      setFamilyPage(familyTotalPages);
+    }
+  }, [familyPage, familyTotalPages]);
+
+  const paginatedFamilyRecords = familyRecords.slice(
+    (familyPage - 1) * familyRowsPerPage,
+    familyPage * familyRowsPerPage,
   );
 
   return (
@@ -509,7 +560,10 @@ const ResidentRecords: React.FC = () => {
             variant="outlined"
             size="small"
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1);
+            }}
             sx={{
               width: 400,
               "& .MuiOutlinedInput-root": {
@@ -617,8 +671,16 @@ const ResidentRecords: React.FC = () => {
                       </Typography>
                     </TableCell>
                   </TableRow>
+                ) : paginatedResidents.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} align="center" sx={{ py: 4 }}>
+                      <Typography color="text.secondary">
+                        No residents found.
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                  filteredResidents.map((resident) => (
+                  paginatedResidents.map((resident) => (
                     <TableRow
                       key={resident.ResidentID}
                       hover
@@ -726,7 +788,7 @@ const ResidentRecords: React.FC = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredHouseholds.map((hh) => (
+                  paginatedHouseholds.map((hh) => (
                     <TableRow key={hh.HouseholdID} hover>
                       <TableCell sx={{ fontWeight: 700, color: "#2e0249" }}>
                         {hh.householdNumber}
@@ -766,7 +828,13 @@ const ResidentRecords: React.FC = () => {
             justifyContent: "center",
           }}
         >
-          <Pagination count={10} color="primary" shape="rounded" />
+          <Pagination
+            count={currentTotalPages}
+            color="primary"
+            shape="rounded"
+            page={page}
+            onChange={(_event, value) => setPage(value)}
+          />
         </Box>
       </Paper>
 
@@ -1020,7 +1088,7 @@ const ResidentRecords: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {familyRecords.map((m) => {
+                {paginatedFamilyRecords.map((m) => {
                   const role =
                     m.RelationshipToFamilyHead === null
                       ? `Head (${m.HeadType})`
@@ -1094,6 +1162,22 @@ const ResidentRecords: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              p: 2,
+              borderTop: "1px solid #f3f4f6",
+            }}
+          >
+            <Pagination
+              count={familyTotalPages}
+              color="primary"
+              shape="rounded"
+              page={familyPage}
+              onChange={(_event, value) => setFamilyPage(value)}
+            />
+          </Box>
           {familyRecords.length > 1 && (
             <Box
               sx={{ p: 2, bgcolor: "#fffbeb", borderTop: "1px solid #fef3c7" }}

@@ -202,14 +202,14 @@ const Dashboard: React.FC = () => {
           </div>
 
           {/* Bottom Section: Classification & Logs */}
-          <div className="flex flex-col md:flex-row gap-6 h-full min-h-[350px]">
+          <div className="flex flex-col md:flex-row gap-6 h-full min-h-87.5">
             {/* Pie Chart Card */}
             <div className="flex-1 bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col">
               <h3 className="text-base font-bold text-blue-600 mb-2">
                 Resident Classification
               </h3>
 
-              <div className="flex-1 flex items-center justify-center relative min-h-[300px]">
+              <div className="flex-1 flex items-center justify-center relative min-h-75">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie

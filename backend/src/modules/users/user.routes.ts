@@ -12,40 +12,43 @@ router.use(authorizeRole("Admin"));
 
 //GET all users
 router.get("/", async (req, res, next) => {
-    try {
-        const users = await UserService.getAllUsers();
-        res.json({
-          success: true,
-          data: users
-        });
-    } catch (err) {
-        next(err);
-    }
+  try {
+    const users = await UserService.getAllUsers();
+    res.json({
+      success: true,
+      data: users,
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 //POST Create new user
 router.post("/", async (req, res, next) => {
   try {
     const { username, password, role } = req.body;
-    const userId = await UserService.createUser(username, password, role);
-    
-    const id = await UserService.createUser(username, password, role);
+    const actorUserId = req.user!.userId;
+    const createdUserId = await UserService.createUser(
+      username,
+      password,
+      role,
+    );
 
     await AuditTrailRepository.log({
-      userId,
+      userId: actorUserId,
       action: "CREATE_USER",
       newValue: JSON.stringify({
-        createdUserId: id,
+        createdUserId,
         username,
-        role
-      })
+        role,
+      }),
     });
 
     res.status(201).json({
       success: true,
       data: {
-        userId: id
-      }
+        userId: createdUserId,
+      },
     });
   } catch (err) {
     next(err);
@@ -60,26 +63,25 @@ router.put("/:id", async (req, res, next) => {
     const userId = (req as any).user.userId;
 
     await UserService.updateUser(targetUserId, { username, password, role });
-    
+
     await AuditTrailRepository.log({
       userId,
       action: "UPDATE_USER",
       newValue: JSON.stringify({
         updatedUserId: targetUserId,
         username,
-        role
-      })
+        role,
+      }),
     });
 
     res.json({
       success: true,
-      message: "User updated successfully"
+      message: "User updated successfully",
     });
   } catch (error) {
     next(error);
   }
 });
-
 
 //PATCH Activate/Deactivate Users
 router.patch("/:id/status", async (req, res, next) => {
@@ -95,13 +97,13 @@ router.patch("/:id/status", async (req, res, next) => {
       action: status === "Active" ? "ACTIVATE_USER" : "DEACTIVATE_USER",
       newValue: JSON.stringify({
         targetUserId,
-        status
-      })
+        status,
+      }),
     });
 
     res.json({
       success: true,
-      message: `User ${status === "Active" ? "activated" : "deactivated"} successfully!`
+      message: `User ${status === "Active" ? "activated" : "deactivated"} successfully!`,
     });
   } catch (error) {
     next(error);

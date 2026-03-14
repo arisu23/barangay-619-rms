@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import type { Official } from "../types";
 import { dashboardService } from "../services/dashboardService";
-import brgyLogo from "../assets/img/brgy_logo.jpg";
+import { useBarangayLogo } from "../hooks/useBarangayLogo";
 
 const OfficialsList: React.FC = () => {
+  const { logoSrc } = useBarangayLogo();
   const [officials, setOfficials] = useState<Official[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -27,7 +28,7 @@ const OfficialsList: React.FC = () => {
       {/* Header Card */}
       <div className="p-6 bg-gray-50 border-b border-gray-100 flex items-center space-x-4">
         <img
-          src={brgyLogo}
+          src={logoSrc}
           alt="Barangay 619 Logo"
           className="w-12 h-12 drop-shadow-sm rounded-full"
         />

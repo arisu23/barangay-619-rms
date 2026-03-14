@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Paper,
@@ -20,127 +20,39 @@ import {
   Pagination,
 } from "@mui/material";
 import { Calendar, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { auditService } from "../services/auditService";
+import { notify } from "../utils/notify";
+import type { AuditLog } from "../types";
 
-// Mock Data
-const auditLogs = [
-  {
-    id: 58,
-    user: "Admin123",
-    date: "2025-11-20",
-    timestamp: "08:30 AM",
-    action: "Add",
-    oldRecord: "1234",
-    newRecord: "Add a new resident",
-  },
-  {
-    id: 59,
-    user: "Staff222",
-    date: "2025-11-21",
-    timestamp: "09:15 AM",
-    action: "Log In",
-    oldRecord: "2222",
-    newRecord: "Log In",
-  },
-  {
-    id: 60,
-    user: "Staff222",
-    date: "2025-11-21",
-    timestamp: "05:00 PM",
-    action: "Log Out",
-    oldRecord: "2222",
-    newRecord: "Log Out",
-  },
-  {
-    id: 61,
-    user: "Staff789",
-    date: "2025-11-22",
-    timestamp: "08:00 AM",
-    action: "Log In",
-    oldRecord: "6789",
-    newRecord: "Log In",
-  },
-  {
-    id: 62,
-    user: "Staff789",
-    date: "2025-11-22",
-    timestamp: "09:45 AM",
-    action: "Add",
-    oldRecord: "6789",
-    newRecord: "Add",
-  },
-  {
-    id: 63,
-    user: "Staff789",
-    date: "2025-11-22",
-    timestamp: "10:30 AM",
-    action: "Edit",
-    oldRecord: "6789",
-    newRecord: "Edit",
-  },
-  {
-    id: 64,
-    user: "Staff789",
-    date: "2025-11-22",
-    timestamp: "11:00 AM",
-    action: "Update",
-    oldRecord: "6789",
-    newRecord: "Update",
-  },
-  {
-    id: 65,
-    user: "Staff789",
-    date: "2025-11-22",
-    timestamp: "02:00 PM",
-    action: "Download PDF",
-    oldRecord: "6789",
-    newRecord: "Download PDF",
-  },
-  {
-    id: 66,
-    user: "Staff789",
-    date: "2025-11-22",
-    timestamp: "03:30 PM",
-    action: "Add",
-    oldRecord: "6789",
-    newRecord: "Add",
-  },
-  {
-    id: 67,
-    user: "Admin123",
-    date: "2025-11-22",
-    timestamp: "04:00 PM",
-    action: "Download CSV",
-    oldRecord: "1234",
-    newRecord: "Download CSV",
-  },
-  {
-    id: 68,
-    user: "Admin123",
-    date: "2025-11-23",
-    timestamp: "08:00 AM",
-    action: "Edit",
-    oldRecord: "1234",
-    newRecord: "Edit",
-  },
-  {
-    id: 69,
-    user: "Staff678",
-    date: "2025-11-23",
-    timestamp: "08:15 AM",
-    action: "Update",
-    oldRecord: "6789",
-    newRecord: "Update",
-  },
-  {
-    id: 70,
-    user: "Admin123",
-    date: "2025-11-23",
-    timestamp: "05:00 PM",
-    action: "Log Out",
-    oldRecord: "1234",
-    newRecord: "Log Out",
-  },
-];
+interface AuditLogRow {
+  id: number;
+  user: string;
+  date: string;
+  timestamp: string;
+  action: string;
+  oldRecord: string;
+  newRecord: string;
+}
+
+const mapAuditLogToRow = (log: AuditLog): AuditLogRow => {
+  const parsedDate = new Date(log.Timestamp);
+  const isValidDate = !Number.isNaN(parsedDate.getTime());
+
+  return {
+    id: log.LogID,
+    user: log.Username || `User ${log.UserID}`,
+    date: isValidDate ? parsedDate.toLocaleDateString("en-CA") : "-",
+    timestamp: isValidDate
+      ? parsedDate.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : String(log.Timestamp || "-"),
+    action: log.Action,
+    oldRecord: log.OldValue || "-",
+    newRecord: log.NewValue || "-",
+  };
+};
 
 // --- Custom Calendar Component ---
 interface CustomCalendarProps {
@@ -155,8 +67,7 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
   initialEnd,
   onApply,
 }) => {
-  // Default view to November 2025 as per mock data/screenshot
-  const [viewDate, setViewDate] = useState(new Date(2025, 10, 1));
+  const [viewDate, setViewDate] = useState(initialStart ?? new Date());
   const [start, setStart] = useState<Date | null>(initialStart);
   const [end, setEnd] = useState<Date | null>(initialEnd);
 
@@ -419,9 +330,13 @@ const CustomCalendar: React.FC<CustomCalendarProps> = ({
 // --- Main Component ---
 
 const AuditTrail: React.FC = () => {
+  const [logs, setLogs] = useState<AuditLogRow[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [userFilter, setUserFilter] = useState("All Users");
   const [searchQuery, setSearchQuery] = useState("");
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
+  const [page, setPage] = useState(1);
+  const rowsPerPage = 10;
 
   // Date Range State (Date objects)
   const [startDate, setStartDate] = useState<Date | null>(null);
@@ -447,6 +362,77 @@ const AuditTrail: React.FC = () => {
   };
 
   const openCalendar = Boolean(anchorEl);
+
+  useEffect(() => {
+    const fetchAuditLogs = async () => {
+      setIsLoading(true);
+      try {
+        const response = await auditService.getLogs(1, 500);
+        const mapped = response.data.map(mapAuditLogToRow);
+        setLogs(mapped);
+      } catch {
+        notify.error("Failed to load audit logs.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchAuditLogs();
+  }, []);
+
+  const availableUsers = useMemo(
+    () => [
+      "All Users",
+      ...Array.from(new Set(logs.map((log) => log.user))).sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    ],
+    [logs],
+  );
+
+  const filteredLogs = useMemo(
+    () =>
+      logs.filter((log) => {
+        if (userFilter !== "All Users" && log.user !== userFilter) {
+          return false;
+        }
+
+        if (
+          searchQuery &&
+          !Object.values(log).some((value) =>
+            String(value).toLowerCase().includes(searchQuery.toLowerCase()),
+          )
+        ) {
+          return false;
+        }
+
+        if (startDate) {
+          const logDate = new Date(log.date);
+          const startBoundary = new Date(startDate);
+          startBoundary.setHours(0, 0, 0, 0);
+          if (logDate < startBoundary) return false;
+        }
+
+        if (endDate) {
+          const logDate = new Date(log.date);
+          const endBoundary = new Date(endDate);
+          endBoundary.setHours(23, 59, 59, 999);
+          if (logDate > endBoundary) return false;
+        }
+
+        return true;
+      }),
+    [logs, userFilter, searchQuery, startDate, endDate],
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [userFilter, searchQuery, startDate, endDate]);
+
+  const paginatedLogs = filteredLogs.slice(
+    (page - 1) * rowsPerPage,
+    page * rowsPerPage,
+  );
 
   return (
     <Box
@@ -568,9 +554,11 @@ const AuditTrail: React.FC = () => {
                   return selected;
                 }}
               >
-                <MenuItem value="All Users">All Users</MenuItem>
-                <MenuItem value="Staff">Staff</MenuItem>
-                <MenuItem value="Admin">Admin</MenuItem>
+                {availableUsers.map((user) => (
+                  <MenuItem key={user} value={user}>
+                    {user}
+                  </MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Box>
@@ -707,37 +695,24 @@ const AuditTrail: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {auditLogs
-                .filter((log) => {
-                  // Basic client-side filtering logic
-                  if (
-                    userFilter !== "All Users" &&
-                    !log.user.includes(userFilter)
-                  )
-                    return false;
-                  if (
-                    searchQuery &&
-                    !Object.values(log).some((val) =>
-                      String(val)
-                        .toLowerCase()
-                        .includes(searchQuery.toLowerCase()),
-                    )
-                  )
-                    return false;
-
-                  // Date Range Filter
-                  if (startDate) {
-                    const logDate = new Date(log.date);
-                    if (logDate < startDate) return false;
-                  }
-                  if (endDate) {
-                    const logDate = new Date(log.date);
-                    if (logDate > endDate) return false;
-                  }
-
-                  return true;
-                })
-                .map((log) => (
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                    <Typography color="text.secondary">
+                      Loading logs...
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : paginatedLogs.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} align="center" sx={{ py: 6 }}>
+                    <Typography color="text.secondary">
+                      No logs found.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                paginatedLogs.map((log) => (
                   <TableRow key={log.id} hover>
                     <TableCell>{log.id}</TableCell>
                     <TableCell>{log.user}</TableCell>
@@ -747,7 +722,8 @@ const AuditTrail: React.FC = () => {
                     <TableCell>{log.oldRecord}</TableCell>
                     <TableCell>{log.newRecord}</TableCell>
                   </TableRow>
-                ))}
+                ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -762,9 +738,11 @@ const AuditTrail: React.FC = () => {
           }}
         >
           <Pagination
-            count={Math.ceil(auditLogs.length / 10)}
+            count={Math.max(1, Math.ceil(filteredLogs.length / rowsPerPage))}
             color="primary"
             shape="rounded"
+            page={page}
+            onChange={(_event, value) => setPage(value)}
           />
         </Box>
       </Paper>

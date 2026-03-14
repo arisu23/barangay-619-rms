@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Box,
   Paper,
@@ -23,6 +23,8 @@ import {
   Select,
   FormControl,
   Alert,
+  IconButton,
+  Pagination,
 } from "@mui/material";
 import {
   CloudUpload,
@@ -33,35 +35,52 @@ import {
   History,
   Download,
 } from "lucide-react";
+import { backupService } from "../services/backupService";
+import { notify } from "../utils/notify";
+import type { BackupLog as BackupApiLog } from "../types";
 
-interface BackupLog {
+interface BackupLogRow {
   id: string;
+  backupId: number;
   fileName: string;
   dateTime: string;
-  status: "Success" | "Failed";
+  status: "Successful" | "Failed" | "Pending";
   filePath: string;
   type: "Backup" | "Restore";
 }
 
-const mockBackupLogs: BackupLog[] = [
+const mapBackupLogToRow = (log: BackupApiLog): BackupLogRow => ({
+  id: String(log.BackupID),
+  backupId: log.BackupID,
+  fileName: log.FileName,
+  dateTime: new Date(log.DateCreated).toLocaleString(),
+  status: log.BackupStatus,
+  filePath: log.FilePath,
+  type: log.BackupType as "Backup" | "Restore",
+});
+
+const mockBackupLogs: BackupLogRow[] = [
   {
     id: "1",
+    backupId: 1,
     fileName: "BRMS_FULL_20251101.bak",
     dateTime: "2025-11-01 08:30 AM",
-    status: "Success",
+    status: "Successful",
     filePath: "E:/Backups/BRMS/",
     type: "Backup",
   },
   {
     id: "2",
+    backupId: 2,
     fileName: "BRMS_SYSTEM_20251105.bak",
     dateTime: "2025-11-05 02:15 PM",
-    status: "Success",
+    status: "Successful",
     filePath: "D:/ExternalDrive/BRMS/",
     type: "Backup",
   },
   {
     id: "3",
+    backupId: 3,
     fileName: "BRMS_FULL_20251110.bak",
     dateTime: "2025-11-10 11:00 AM",
     status: "Failed",
@@ -70,91 +89,137 @@ const mockBackupLogs: BackupLog[] = [
   },
   {
     id: "4",
+    backupId: 4,
     fileName: "BRMS_MANUAL_20251115.bak",
     dateTime: "2025-11-15 04:45 PM",
-    status: "Success",
+    status: "Successful",
     filePath: "F:/BRMS_Recovery/",
     type: "Backup",
   },
 ];
 
 const BackupRestore: React.FC = () => {
-  const [logs, setLogs] = useState<BackupLog[]>(mockBackupLogs);
+  const [logs, setLogs] = useState<BackupLogRow[]>(mockBackupLogs);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
+  const [page, setPage] = useState(1);
+  const rowsPerPage = 10;
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const [isBackupDialogOpen, setIsBackupDialogOpen] = useState(false);
   const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
   const [isProgressDialogOpen, setIsProgressDialogOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleStartBackup = () => {
+  const fetchBackupLogs = useCallback(async () => {
+    try {
+      const data = await backupService.getLogs();
+      const mapped = data.map(mapBackupLogToRow);
+      setLogs(mapped.length ? mapped : []);
+    } catch {
+      notify.error("Failed to load backup logs.");
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBackupLogs();
+  }, [fetchBackupLogs]);
+
+  const handleDownloadBackup = async (log: BackupLogRow) => {
+    if (log.type !== "Backup") return;
+
+    try {
+      const blob = await backupService.downloadBackup(log.backupId);
+      const fileUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = log.fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(fileUrl);
+      notify.success("Backup file downloaded.");
+    } catch {
+      notify.error("Failed to download backup file.");
+    }
+  };
+
+  const handleStartBackup = async () => {
     setIsBackupDialogOpen(false);
     setIsProgressDialogOpen(true);
-    setProgress(0);
+    setProgress(25);
+    setIsProcessing(true);
 
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          finishAction("backup");
-          return 100;
-        }
-        return prev + 5;
-      });
-    }, 100);
+    try {
+      await backupService.createBackup();
+      setProgress(100);
+      await fetchBackupLogs();
+      setSuccessMessage("Backup created successfully!");
+      notify.success("Backup created successfully!");
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || "Failed to create backup.";
+      setErrorMessage(message);
+      notify.error(message);
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => {
+        setIsProgressDialogOpen(false);
+        setProgress(0);
+      }, 400);
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      if (!file.name.endsWith(".bak")) {
-        setErrorMessage("Invalid file type. Please select a .bak backup file.");
+      if (!file.name.toLowerCase().endsWith(".sql")) {
+        setErrorMessage("Invalid file type. Please select a .sql backup file.");
         return;
       }
+      setSelectedFile(file);
+      setErrorMessage(null);
       setIsRestoreDialogOpen(true);
     }
   };
 
-  const handleStartRestore = () => {
+  const handleStartRestore = async () => {
+    if (!selectedFile) {
+      setErrorMessage("No backup file selected.");
+      return;
+    }
+
     setIsRestoreDialogOpen(false);
     setIsProgressDialogOpen(true);
-    setProgress(0);
+    setProgress(30);
+    setIsProcessing(true);
 
-    const interval = setInterval(() => {
-      setProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          finishAction("restore");
-          return 100;
-        }
-        return prev + 8;
-      });
-    }, 120);
-  };
-
-  const finishAction = (type: "backup" | "restore") => {
-    setTimeout(() => {
-      setIsProgressDialogOpen(false);
-      const now = new Date();
-      const timestamp = now.toLocaleString();
-      const newLog: BackupLog = {
-        id: Date.now().toString(),
-        fileName: `BRMS_${type.toUpperCase()}_${now.toISOString().slice(0, 10).replace(/-/g, "")}.bak`,
-        dateTime: timestamp,
-        status: "Success",
-        filePath: type === "backup" ? "E:/Backups/BRMS/" : "System Recovery",
-        type: type === "backup" ? "Backup" : "Restore",
-      };
-      setLogs([newLog, ...logs]);
-      setSuccessMessage(
-        `${type === "backup" ? "Backup created" : "System restored"} successfully!`,
-      );
-    }, 500);
+    try {
+      await backupService.restoreBackup(selectedFile);
+      setProgress(100);
+      await fetchBackupLogs();
+      setSuccessMessage("System restored successfully!");
+      notify.success("System restored successfully!");
+      setSelectedFile(null);
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || "Failed to restore backup.";
+      setErrorMessage(message);
+      notify.error(message);
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => {
+        setIsProgressDialogOpen(false);
+        setProgress(0);
+      }, 400);
+    }
   };
 
   const filteredLogs = logs.filter((log) => {
@@ -164,6 +229,23 @@ const BackupRestore: React.FC = () => {
     const matchesStatus = statusFilter === "All" || log.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
+
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / rowsPerPage));
+
+  useEffect(() => {
+    setPage(1);
+  }, [searchQuery, statusFilter]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const paginatedLogs = filteredLogs.slice(
+    (page - 1) * rowsPerPage,
+    page * rowsPerPage,
+  );
 
   return (
     <Box sx={{ p: 4, height: "100%", overflowY: "auto", bgcolor: "#f8fafc" }}>
@@ -303,7 +385,7 @@ const BackupRestore: React.FC = () => {
                 sx={{ color: "#64748b", mb: 2.5, lineHeight: 1.6 }}
               >
                 Recover your system to a previous state using a valid backup
-                file (.bak) from your storage.
+                file (.sql) from your storage.
               </Typography>
               <Button
                 variant="outlined"
@@ -326,7 +408,7 @@ const BackupRestore: React.FC = () => {
                 type="file"
                 ref={fileInputRef}
                 style={{ display: "none" }}
-                accept=".bak"
+                accept=".sql"
                 onChange={handleFileSelect}
               />
             </Box>
@@ -364,7 +446,10 @@ const BackupRestore: React.FC = () => {
               placeholder="Search by filename..."
               size="small"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
               sx={{
                 width: 320,
                 "& .MuiOutlinedInput-root": {
@@ -391,12 +476,16 @@ const BackupRestore: React.FC = () => {
               <FormControl size="small" sx={{ minWidth: 160 }}>
                 <Select
                   value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
+                  onChange={(e) => {
+                    setStatusFilter(e.target.value);
+                    setPage(1);
+                  }}
                   sx={{ borderRadius: 2, bgcolor: "white" }}
                 >
                   <MenuItem value="All">All Status</MenuItem>
-                  <MenuItem value="Success">Success</MenuItem>
+                  <MenuItem value="Successful">Successful</MenuItem>
                   <MenuItem value="Failed">Failed</MenuItem>
+                  <MenuItem value="Pending">Pending</MenuItem>
                 </Select>
               </FormControl>
             </Box>
@@ -413,13 +502,20 @@ const BackupRestore: React.FC = () => {
                 <TableCell sx={{ fontWeight: 700 }}>Date & Time</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 700, borderRadius: "0 12px 0 0" }}>
-                  Storage Path
+                <TableCell sx={{ fontWeight: 700 }}>Storage Path</TableCell>
+                <TableCell
+                  sx={{
+                    fontWeight: 700,
+                    borderRadius: "0 12px 0 0",
+                    textAlign: "center",
+                  }}
+                >
+                  Actions
                 </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {filteredLogs.map((log) => (
+              {paginatedLogs.map((log) => (
                 <TableRow key={log.id} hover>
                   <TableCell sx={{ fontWeight: 600 }}>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -452,8 +548,17 @@ const BackupRestore: React.FC = () => {
                         fontWeight: 700,
                         borderRadius: 1.5,
                         bgcolor:
-                          log.status === "Success" ? "#dcfce7" : "#fee2e2",
-                        color: log.status === "Success" ? "#166534" : "#991b1b",
+                          log.status === "Successful"
+                            ? "#dcfce7"
+                            : log.status === "Pending"
+                              ? "#fef3c7"
+                              : "#fee2e2",
+                        color:
+                          log.status === "Successful"
+                            ? "#166534"
+                            : log.status === "Pending"
+                              ? "#92400e"
+                              : "#991b1b",
                       }}
                     />
                   </TableCell>
@@ -466,11 +571,47 @@ const BackupRestore: React.FC = () => {
                   >
                     {log.filePath}
                   </TableCell>
+                  <TableCell align="center">
+                    <IconButton
+                      size="small"
+                      color="primary"
+                      disabled={log.type !== "Backup"}
+                      onClick={() => handleDownloadBackup(log)}
+                    >
+                      <Download size={17} />
+                    </IconButton>
+                  </TableCell>
                 </TableRow>
               ))}
+              {filteredLogs.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 6 }}>
+                    <Typography color="text.secondary">
+                      No backup logs found.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </TableContainer>
+
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "center",
+            p: 2,
+            borderTop: "1px solid #f1f5f9",
+          }}
+        >
+          <Pagination
+            count={totalPages}
+            color="primary"
+            shape="rounded"
+            page={page}
+            onChange={(_event, value) => setPage(value)}
+          />
+        </Box>
       </Paper>
 
       {/* Dialogs */}
@@ -495,6 +636,7 @@ const BackupRestore: React.FC = () => {
           <Button
             variant="contained"
             onClick={handleStartBackup}
+            disabled={isProcessing}
             sx={{ fontWeight: 700, borderRadius: 2 }}
           >
             Confirm
@@ -529,6 +671,7 @@ const BackupRestore: React.FC = () => {
             variant="contained"
             color="error"
             onClick={handleStartRestore}
+            disabled={isProcessing || !selectedFile}
             sx={{ fontWeight: 700, borderRadius: 2 }}
           >
             Restore Now

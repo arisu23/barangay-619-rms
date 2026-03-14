@@ -1,297 +1,296 @@
 import { pool } from "../../config/database.js";
 
 export class ReportRepository {
+  // ═══════════════════════════════════════════
+  //  DEMOGRAPHICS - Summary counts (UC8)
+  // ═══════════════════════════════════════════
 
-    // ═══════════════════════════════════════════
-    //  DEMOGRAPHICS - Summary counts (UC8)
-    // ═══════════════════════════════════════════
-
-    //Total active inhabitants
-    static async getTotalInhabitants(): Promise<number> {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT COUNT(*) as total FROM Resident WHERE ResidentStatus = 'Active'`
-            );
-            return Number(rows[0].total);
-        } finally {
-            conn.release();
-        }
+  //Total active inhabitants
+  static async getTotalInhabitants(): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT COUNT(*) as total FROM Resident WHERE ResidentStatus = 'Active'`,
+      );
+      return Number(rows[0].total);
+    } finally {
+      conn.release();
     }
+  }
 
-    //Total households
-    static async getTotalHouseholds(): Promise<number> {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT COUNT(*) as total FROM Household`
-            );
-            return Number(rows[0].total);
-        } finally {
-            conn.release();
-        }
+  //Total households
+  static async getTotalHouseholds(): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(`SELECT COUNT(*) as total FROM Household`);
+      return Number(rows[0].total);
+    } finally {
+      conn.release();
     }
+  }
 
-    //Total families (family heads)
-    static async getTotalFamilies(): Promise<number> {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT COUNT(*) as total FROM FamilyHead`
-            );
-            return Number(rows[0].total);
-        } finally {
-            conn.release();
-        }
+  //Total families (family heads)
+  static async getTotalFamilies(): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(`SELECT COUNT(*) as total FROM FamilyHead`);
+      return Number(rows[0].total);
+    } finally {
+      conn.release();
     }
+  }
 
-    //Registered voters
-    static async getRegisteredVoters(): Promise<number> {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT COUNT(*) as total FROM Voter v
+  //Registered voters
+  static async getRegisteredVoters(): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT COUNT(*) as total FROM Voter v
                 JOIN Resident r ON v.ResidentID = r.ResidentID
-                WHERE r.ResidentStatus = 'Active'`
-            );
-            return Number(rows[0].total);
-        } finally {
-            conn.release();
-        }
+                WHERE r.ResidentStatus = 'Active'`,
+      );
+      return Number(rows[0].total);
+    } finally {
+      conn.release();
     }
+  }
 
-    //Senior citizens (age >= 60)
-    static async getSeniorCitizens(): Promise<number> {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT COUNT(*) as total FROM Resident
+  //Senior citizens (age >= 60)
+  static async getSeniorCitizens(): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT COUNT(*) as total FROM Resident
                 WHERE ResidentStatus = 'Active'
-                AND TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) >= 60`
-            );
-            return Number(rows[0].total);
-        } finally {
-            conn.release();
-        }
+                AND TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) >= 60`,
+      );
+      return Number(rows[0].total);
+    } finally {
+      conn.release();
     }
+  }
 
-    //Category count (PWD, Solo Parent, Indigent, etc.)
-    static async getCategoryCount(categoryName: string): Promise<number> {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT COUNT(*) as total FROM ResidentCategory rc
+  //Category count (PWD, Solo Parent, Indigent, etc.)
+  static async getCategoryCount(categoryName: string): Promise<number> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT COUNT(*) as total FROM ResidentCategory rc
                 JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
                 JOIN Resident r ON rc.ResidentID = r.ResidentID
                 WHERE sc.CategoryName = ? AND r.ResidentStatus = 'Active'`,
-                [categoryName]
-            );
-            return Number(rows[0].total);
-        } finally {
-            conn.release();
-        }
+        [categoryName],
+      );
+      return Number(rows[0].total);
+    } finally {
+      conn.release();
     }
+  }
 
-    // ═══════════════════════════════════════════
-    //  DEMOGRAPHICS - Chart data
-    // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  //  DEMOGRAPHICS - Chart data
+  // ═══════════════════════════════════════════
 
-    //Age group distribution (for bar chart)
-    static async getAgeGroupDistribution() {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT
+  //Age group distribution (for bar chart)
+  static async getAgeGroupDistribution() {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT
                     SUM(CASE WHEN TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) BETWEEN 0 AND 14 THEN 1 ELSE 0 END) as '0-14',
                     SUM(CASE WHEN TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) BETWEEN 15 AND 24 THEN 1 ELSE 0 END) as '15-24',
                     SUM(CASE WHEN TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) BETWEEN 25 AND 64 THEN 1 ELSE 0 END) as '25-64',
                     SUM(CASE WHEN TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) >= 65 THEN 1 ELSE 0 END) as '65+'
-                FROM Resident WHERE ResidentStatus = 'Active'`
-            );
-            const row = rows[0];
-            return [
-                { name: "0-14", value: Number(row["0-14"]) },
-                { name: "15-24", value: Number(row["15-24"]) },
-                { name: "25-64", value: Number(row["25-64"]) },
-                { name: "65+", value: Number(row["65+"]) }
-            ];
-        } finally {
-            conn.release();
-        }
+                FROM Resident WHERE ResidentStatus = 'Active'`,
+      );
+      const row = rows[0];
+      return [
+        { name: "0-14", value: Number(row["0-14"]) },
+        { name: "15-24", value: Number(row["15-24"]) },
+        { name: "25-64", value: Number(row["25-64"]) },
+        { name: "65+", value: Number(row["65+"]) },
+      ];
+    } finally {
+      conn.release();
     }
+  }
 
-    //Employment breakdown (for horizontal bar chart)
-    static async getEmploymentBreakdown() {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT
+  //Employment breakdown (for horizontal bar chart)
+  static async getEmploymentBreakdown() {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT
                     COALESCE(e.EmploymentStatus, 'Unemployed') as status,
                     COUNT(*) as total
                 FROM Resident r
                 LEFT JOIN Employment e ON r.ResidentID = e.ResidentID
                 WHERE r.ResidentStatus = 'Active'
-                GROUP BY COALESCE(e.EmploymentStatus, 'Unemployed')`
-            );
-            const colorMap: Record<string, string> = {
-                "Employed": "#3b82f6",
-                "Self-Employed": "#10b981",
-                "Retired": "#f59e0b",
-                "Unemployed": "#64748b"
-            };
-            return rows.map((row: any) => ({
-                name: row.status,
-                value: Number(row.total),
-                color: colorMap[row.status] || "#8b5cf6"
-            }));
-        } finally {
-            conn.release();
-        }
+                GROUP BY COALESCE(e.EmploymentStatus, 'Unemployed')`,
+      );
+      const colorMap: Record<string, string> = {
+        Employed: "#3b82f6",
+        "Self-Employed": "#10b981",
+        Retired: "#f59e0b",
+        Unemployed: "#64748b",
+      };
+      return rows.map((row: any) => ({
+        name: row.status,
+        value: Number(row.total),
+        color: colorMap[row.status] || "#8b5cf6",
+      }));
+    } finally {
+      conn.release();
     }
+  }
 
-    // ═══════════════════════════════════════════
-    //  DEMOGRAPHICS - Detailed resident lists
-    // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  //  DEMOGRAPHICS - Detailed resident lists
+  // ═══════════════════════════════════════════
 
-    //Get residents by category with pagination + search
-    static async getResidentsByCategory(
-        category: string,
-        search: string,
-        page: number,
-        limit: number
-    ) {
-        const conn = await pool.getConnection();
-        try {
-            let baseQuery = "";
-            let countQuery = "";
-            const params: any[] = [];
-            const countParams: any[] = [];
+  //Get residents by category with pagination + search
+  static async getResidentsByCategory(
+    category: string,
+    search: string,
+    page: number,
+    limit: number,
+  ) {
+    const conn = await pool.getConnection();
+    try {
+      let baseQuery = "";
+      let countQuery = "";
+      const params: any[] = [];
+      const countParams: any[] = [];
 
-            const searchClause = search
-                ? `AND (r.FirstName LIKE ? OR r.LastName LIKE ? OR hn.HouseholdNumberName LIKE ?)`
-                : "";
-            const searchParams = search
-                ? [`%${search}%`, `%${search}%`, `%${search}%`]
-                : [];
+      const searchClause = search
+        ? `AND (r.FirstName LIKE ? OR r.LastName LIKE ? OR hn.HouseholdNumberName LIKE ?)`
+        : "";
+      const searchParams = search
+        ? [`%${search}%`, `%${search}%`, `%${search}%`]
+        : [];
 
-            const selectFields = `r.ResidentID, r.LastName, r.FirstName, r.MiddleName,
+      const selectFields = `r.ResidentID, r.LastName, r.FirstName, r.MiddleName,
                 TIMESTAMPDIFF(YEAR, r.DateOfBirth, CURDATE()) as Age,
                 r.Sex, r.CivilStatus, r.Citizenship,
                 hn.HouseholdNumberName as Household,
                 a.Street_Alley_Zone as Street`;
 
-            const baseJoins = `FROM Resident r
+      const baseJoins = `FROM Resident r
                 LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID
                 LEFT JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
                 LEFT JOIN Address a ON h.AddressID = a.AddressID`;
 
-            switch (category) {
-                case "inhabitants":
-                    baseQuery = `SELECT ${selectFields} ${baseJoins}
+      switch (category) {
+        case "inhabitants":
+          baseQuery = `SELECT ${selectFields} ${baseJoins}
                         WHERE r.ResidentStatus = 'Active' ${searchClause}`;
-                    countQuery = `SELECT COUNT(*) as total ${baseJoins}
+          countQuery = `SELECT COUNT(*) as total ${baseJoins}
                         WHERE r.ResidentStatus = 'Active' ${searchClause}`;
-                    params.push(...searchParams);
-                    countParams.push(...searchParams);
-                    break;
+          params.push(...searchParams);
+          countParams.push(...searchParams);
+          break;
 
-                case "household":
-                    baseQuery = `SELECT ${selectFields} ${baseJoins}
+        case "household":
+          baseQuery = `SELECT ${selectFields} ${baseJoins}
                         WHERE r.ResidentStatus = 'Active' AND r.HouseholdID IS NOT NULL ${searchClause}`;
-                    countQuery = `SELECT COUNT(*) as total ${baseJoins}
+          countQuery = `SELECT COUNT(*) as total ${baseJoins}
                         WHERE r.ResidentStatus = 'Active' AND r.HouseholdID IS NOT NULL ${searchClause}`;
-                    params.push(...searchParams);
-                    countParams.push(...searchParams);
-                    break;
+          params.push(...searchParams);
+          countParams.push(...searchParams);
+          break;
 
-                case "families":
-                    baseQuery = `SELECT ${selectFields} ${baseJoins}
+        case "families":
+          baseQuery = `SELECT ${selectFields} ${baseJoins}
                         JOIN FamilyHead fh ON r.ResidentID = fh.ResidentID
                         WHERE r.ResidentStatus = 'Active' ${searchClause}`;
-                    countQuery = `SELECT COUNT(*) as total ${baseJoins}
+          countQuery = `SELECT COUNT(*) as total ${baseJoins}
                         JOIN FamilyHead fh ON r.ResidentID = fh.ResidentID
                         WHERE r.ResidentStatus = 'Active' ${searchClause}`;
-                    params.push(...searchParams);
-                    countParams.push(...searchParams);
-                    break;
+          params.push(...searchParams);
+          countParams.push(...searchParams);
+          break;
 
-                case "voters":
-                    baseQuery = `SELECT ${selectFields} ${baseJoins}
+        case "voters":
+          baseQuery = `SELECT ${selectFields} ${baseJoins}
                         JOIN Voter v ON r.ResidentID = v.ResidentID
                         WHERE r.ResidentStatus = 'Active' ${searchClause}`;
-                    countQuery = `SELECT COUNT(*) as total ${baseJoins}
+          countQuery = `SELECT COUNT(*) as total ${baseJoins}
                         JOIN Voter v ON r.ResidentID = v.ResidentID
                         WHERE r.ResidentStatus = 'Active' ${searchClause}`;
-                    params.push(...searchParams);
-                    countParams.push(...searchParams);
-                    break;
+          params.push(...searchParams);
+          countParams.push(...searchParams);
+          break;
 
-                case "seniors":
-                    baseQuery = `SELECT ${selectFields} ${baseJoins}
+        case "seniors":
+          baseQuery = `SELECT ${selectFields} ${baseJoins}
                         WHERE r.ResidentStatus = 'Active'
                         AND TIMESTAMPDIFF(YEAR, r.DateOfBirth, CURDATE()) >= 60 ${searchClause}`;
-                    countQuery = `SELECT COUNT(*) as total ${baseJoins}
+          countQuery = `SELECT COUNT(*) as total ${baseJoins}
                         WHERE r.ResidentStatus = 'Active'
                         AND TIMESTAMPDIFF(YEAR, r.DateOfBirth, CURDATE()) >= 60 ${searchClause}`;
-                    params.push(...searchParams);
-                    countParams.push(...searchParams);
-                    break;
+          params.push(...searchParams);
+          countParams.push(...searchParams);
+          break;
 
-                case "pwd":
-                case "solo":
-                case "indigent": {
-                    const catMap: Record<string, string> = {
-                        pwd: "PWD",
-                        solo: "Solo Parent",
-                        indigent: "4Ps"
-                    };
-                    baseQuery = `SELECT ${selectFields} ${baseJoins}
+        case "pwd":
+        case "solo":
+        case "indigent": {
+          const catMap: Record<string, string> = {
+            pwd: "PWD",
+            solo: "Solo Parent",
+            indigent: "4Ps",
+          };
+          baseQuery = `SELECT ${selectFields} ${baseJoins}
                         JOIN ResidentCategory rc ON r.ResidentID = rc.ResidentID
                         JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
                         WHERE r.ResidentStatus = 'Active' AND sc.CategoryName = ? ${searchClause}`;
-                    countQuery = `SELECT COUNT(*) as total ${baseJoins}
+          countQuery = `SELECT COUNT(*) as total ${baseJoins}
                         JOIN ResidentCategory rc ON r.ResidentID = rc.ResidentID
                         JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
                         WHERE r.ResidentStatus = 'Active' AND sc.CategoryName = ? ${searchClause}`;
-                    params.push(catMap[category], ...searchParams);
-                    countParams.push(catMap[category], ...searchParams);
-                    break;
-                }
-
-                default:
-                    throw { status: 400, message: `Invalid category: ${category}` };
-            }
-
-            //Add pagination
-            const offset = page * limit;
-            baseQuery += ` ORDER BY r.LastName, r.FirstName LIMIT ? OFFSET ?`;
-            params.push(limit, offset);
-
-            const [data, totalRows] = await Promise.all([
-                conn.query(baseQuery, params),
-                conn.query(countQuery, countParams)
-            ]);
-
-            return {
-                data,
-                total: Number(totalRows[0].total),
-                page,
-                limit,
-                totalPages: Math.ceil(Number(totalRows[0].total) / limit)
-            };
-        } finally {
-            conn.release();
+          params.push(catMap[category], ...searchParams);
+          countParams.push(catMap[category], ...searchParams);
+          break;
         }
+
+        default:
+          throw { status: 400, message: `Invalid category: ${category}` };
+      }
+
+      //Add pagination
+      const safePage = page > 0 ? page : 1;
+      const safeLimit = limit > 0 ? limit : 10;
+      const offset = (safePage - 1) * safeLimit;
+      baseQuery += ` ORDER BY r.LastName, r.FirstName LIMIT ? OFFSET ?`;
+      params.push(safeLimit, offset);
+
+      const [data, totalRows] = await Promise.all([
+        conn.query(baseQuery, params),
+        conn.query(countQuery, countParams),
+      ]);
+
+      const total = Number(totalRows[0].total);
+
+      return {
+        data,
+        total,
+        page: safePage,
+        limit: safeLimit,
+        totalPages: Math.ceil(total / safeLimit),
+      };
+    } finally {
+      conn.release();
     }
+  }
 
-    // ═══════════════════════════════════════════
-    //  RBI FORM A - Residents by household (UC9)
-    // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  //  RBI FORM A - Residents by household (UC9)
+  // ═══════════════════════════════════════════
 
-    static async getFormAData(householdId?: number) {
-        const conn = await pool.getConnection();
-        try {
-            let query = `SELECT
+  static async getFormAData(householdId?: number) {
+    const conn = await pool.getConnection();
+    try {
+      let query = `SELECT
                 r.LastName, r.FirstName, r.MiddleName, r.Suffix,
                 r.PlaceOfBirth, r.DateOfBirth,
                 TIMESTAMPDIFF(YEAR, r.DateOfBirth, CURDATE()) as Age,
@@ -310,30 +309,30 @@ export class ReportRepository {
             LEFT JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
             WHERE r.ResidentStatus = 'Active'`;
 
-            const params: any[] = [];
-            if (householdId) {
-                query += ` AND r.HouseholdID = ?`;
-                params.push(householdId);
-            }
+      const params: any[] = [];
+      if (householdId) {
+        query += ` AND r.HouseholdID = ?`;
+        params.push(householdId);
+      }
 
-            query += ` GROUP BY r.ResidentID ORDER BY hn.HouseholdNumberName, r.LastName, r.FirstName`;
+      query += ` GROUP BY r.ResidentID ORDER BY hn.HouseholdNumberName, r.LastName, r.FirstName`;
 
-            return await conn.query(query, params);
-        } finally {
-            conn.release();
-        }
+      return await conn.query(query, params);
+    } finally {
+      conn.release();
     }
+  }
 
-    // ═══════════════════════════════════════════
-    //  RBI FORM C - Population monitoring (UC9)
-    // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  //  RBI FORM C - Population monitoring (UC9)
+  // ═══════════════════════════════════════════
 
-    static async getFormCData() {
-        const conn = await pool.getConnection();
-        try {
-            //Age brackets by sex
-            const ageBrackets = await conn.query(
-                `SELECT
+  static async getFormCData() {
+    const conn = await pool.getConnection();
+    try {
+      //Age brackets by sex
+      const ageBrackets = await conn.query(
+        `SELECT
                     CASE
                         WHEN TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) BETWEEN 0 AND 4 THEN 'Under 5 years old'
                         WHEN TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()) BETWEEN 5 AND 9 THEN '5-9 years old'
@@ -358,12 +357,12 @@ export class ReportRepository {
                     COUNT(*) as total
                 FROM Resident WHERE ResidentStatus = 'Active'
                 GROUP BY bracket
-                ORDER BY MIN(TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()))`
-            );
+                ORDER BY MIN(TIMESTAMPDIFF(YEAR, DateOfBirth, CURDATE()))`,
+      );
 
-            //Sector counts (from SpecialCategory)
-            const sectors = await conn.query(
-                `SELECT sc.CategoryName as sector,
+      //Sector counts (from SpecialCategory)
+      const sectors = await conn.query(
+        `SELECT sc.CategoryName as sector,
                     SUM(CASE WHEN r.Sex = 'Male' THEN 1 ELSE 0 END) as male,
                     SUM(CASE WHEN r.Sex = 'Female' THEN 1 ELSE 0 END) as female,
                     COUNT(*) as total
@@ -371,61 +370,61 @@ export class ReportRepository {
                 JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
                 JOIN Resident r ON rc.ResidentID = r.ResidentID
                 WHERE r.ResidentStatus = 'Active'
-                GROUP BY sc.CategoryName`
-            );
+                GROUP BY sc.CategoryName`,
+      );
 
-            //Civil status counts
-            const civilStatus = await conn.query(
-                `SELECT CivilStatus as status, Sex,
+      //Civil status counts
+      const civilStatus = await conn.query(
+        `SELECT CivilStatus as status, Sex,
                     COUNT(*) as total
                 FROM Resident WHERE ResidentStatus = 'Active'
-                GROUP BY CivilStatus, Sex`
-            );
+                GROUP BY CivilStatus, Sex`,
+      );
 
-            //Citizenship counts
-            const citizenship = await conn.query(
-                `SELECT Citizenship as citizenship, Sex,
+      //Citizenship counts
+      const citizenship = await conn.query(
+        `SELECT Citizenship as citizenship, Sex,
                     COUNT(*) as total
                 FROM Resident WHERE ResidentStatus = 'Active'
-                GROUP BY Citizenship, Sex`
-            );
+                GROUP BY Citizenship, Sex`,
+      );
 
-            //Summary counts
-            const totalInhabitants = await conn.query(
-                `SELECT COUNT(*) as total FROM Resident WHERE ResidentStatus = 'Active'`
-            );
-            const totalHouseholds = await conn.query(
-                `SELECT COUNT(*) as total FROM Household`
-            );
-            const totalFamilies = await conn.query(
-                `SELECT COUNT(*) as total FROM FamilyHead`
-            );
+      //Summary counts
+      const totalInhabitants = await conn.query(
+        `SELECT COUNT(*) as total FROM Resident WHERE ResidentStatus = 'Active'`,
+      );
+      const totalHouseholds = await conn.query(
+        `SELECT COUNT(*) as total FROM Household`,
+      );
+      const totalFamilies = await conn.query(
+        `SELECT COUNT(*) as total FROM FamilyHead`,
+      );
 
-            return {
-                ageBrackets,
-                sectors,
-                civilStatus,
-                citizenship,
-                summary: {
-                    totalInhabitants: Number(totalInhabitants[0].total),
-                    totalHouseholds: Number(totalHouseholds[0].total),
-                    totalFamilies: Number(totalFamilies[0].total)
-                }
-            };
-        } finally {
-            conn.release();
-        }
+      return {
+        ageBrackets,
+        sectors,
+        civilStatus,
+        citizenship,
+        summary: {
+          totalInhabitants: Number(totalInhabitants[0].total),
+          totalHouseholds: Number(totalHouseholds[0].total),
+          totalFamilies: Number(totalFamilies[0].total),
+        },
+      };
+    } finally {
+      conn.release();
     }
+  }
 
-    // ═══════════════════════════════════════════
-    //  RESIDENT FULL PROFILE - For PDF (FR4)
-    // ═══════════════════════════════════════════
+  // ═══════════════════════════════════════════
+  //  RESIDENT FULL PROFILE - For PDF (FR4)
+  // ═══════════════════════════════════════════
 
-    static async getResidentFullProfile(residentId: number) {
-        const conn = await pool.getConnection();
-        try {
-            const rows = await conn.query(
-                `SELECT
+  static async getResidentFullProfile(residentId: number) {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT
                     r.ResidentID, r.FirstName, r.MiddleName, r.LastName, r.Suffix,
                     r.Sex, r.DateOfBirth, r.PlaceOfBirth, r.CivilStatus,
                     r.Citizenship, r.Religion, r.RContactNumber, r.REmail,
@@ -450,12 +449,12 @@ export class ReportRepository {
                 LEFT JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
                 WHERE r.ResidentID = ?
                 GROUP BY r.ResidentID`,
-                [residentId]
-            );
+        [residentId],
+      );
 
-            return rows[0] || null;
-        } finally {
-            conn.release();
-        }
+      return rows[0] || null;
+    } finally {
+      conn.release();
     }
+  }
 }

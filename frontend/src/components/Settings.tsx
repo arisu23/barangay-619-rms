@@ -1,4 +1,10 @@
-import React, { useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Box,
   Paper,
@@ -30,6 +36,7 @@ import {
   MenuItem,
   Tooltip,
   InputAdornment,
+  Pagination,
 } from "@mui/material";
 import {
   Edit2,
@@ -51,8 +58,18 @@ import {
   Filter,
   Monitor,
 } from "lucide-react";
+import { residentService } from "../services/residentService";
+import { officialService, type OfficialApi } from "../services/officialService";
+import {
+  userAccountService,
+  type UserAccountApi,
+} from "../services/userAccountService";
+import { barangayInfoService } from "../services/barangayInfoService";
+import { notify } from "../utils/notify";
+import { useBarangayLogo } from "../hooks/useBarangayLogo";
+import type { ResidentListItem } from "../types";
 
-interface BarangayInfo {
+interface BarangayInfoForm {
   name: string;
   city: string;
   district: string;
@@ -69,16 +86,20 @@ interface SystemInfo {
 }
 
 interface Official {
-  id: string;
+  id: number;
+  residentId: number;
   name: string;
+  firstName: string;
+  lastName: string;
   position: string;
+  status: "Active" | "Inactive" | "Former";
   imageUrl?: string;
   termStart?: string;
   termEnd?: string;
 }
 
 interface UserAccount {
-  id: string;
+  id: number;
   name: string;
   username: string;
   role: "Admin" | "Staff";
@@ -86,117 +107,115 @@ interface UserAccount {
   lastLogin?: string;
 }
 
-// Mock Residents for Selection
-const mockResidents = [
-  { id: 1, name: "Abad, Carlos" },
-  { id: 2, name: "Bautista, Lica" },
-  { id: 3, name: "Castalias, Aries" },
-  { id: 4, name: "Cordero, Miguel" },
-  { id: 5, name: "Dela Cruz, Jasmine" },
-  { id: 6, name: "Enriquez, Ramon" },
-  { id: 7, name: "Flores, Katrina" },
-  { id: 8, name: "Gutierrez, Paolo" },
-  { id: 9, name: "Hernandez, Maria" },
-  { id: 10, name: "Ignacio, Leo" },
+interface UserFormData {
+  name: string;
+  username: string;
+  role: "Admin" | "Staff";
+  status: "Active" | "Inactive";
+}
+
+interface ResidentOption {
+  id: number;
+  name: string;
+}
+
+const DEFAULT_BARANGAY_INFO: BarangayInfoForm = {
+  name: "Barangay 619",
+  city: "Manila",
+  district: "Sampaloc",
+  address:
+    "Bata Street, Barangay 619, Zone 62, Bacood, Santa Mesa, Manila City, 1000, Metro Manila, Philippines",
+  phone: "",
+  telephone: "",
+  email: "",
+};
+
+const INITIAL_SYSTEM_INFO: SystemInfo = {
+  name: "Local-Based Resident Record Management System",
+  description:
+    "The Local-Based Resident Record Management System is a digital platform designed to store and manage essential information about residents within Barangay 619. It allows authorized personnel to efficiently access and update resident records, ensuring accurate and organized data for internal administrative use. The system improves efficiency by centralizing information in a secure platform, making resident data management easier and more reliable.",
+  version: "1.0",
+};
+
+const OFFICIAL_POSITIONS = [
+  "Barangay Captain",
+  "Kagawad",
+  "Secretary",
+  "Treasurer",
+  "SK Chairperson",
+  "Clerk",
+  "Tanod",
+  "BHW",
+  "Others",
 ];
 
-const initialOfficials: Official[] = [
-  {
-    id: "1",
-    name: "Hon. Michael King Cajucom",
-    position: "Chairman",
-    imageUrl: "https://picsum.photos/100/100?random=1",
-    termStart: "2023-10-30",
-    termEnd: "2026-10-30",
-  },
-  {
-    id: "2",
-    name: "Hon. Reynaldo T. Maca",
-    position: "Secretary",
-    imageUrl: "https://picsum.photos/100/100?random=2",
-    termStart: "2023-11-01",
-    termEnd: "2026-10-30",
-  },
-  {
-    id: "3",
-    name: "Hon. Jean L. Limpahan",
-    position: "Treasurer",
-    imageUrl: "https://picsum.photos/100/100?random=3",
-    termStart: "2023-11-01",
-    termEnd: "2026-10-30",
-  },
-  {
-    id: "4",
-    name: "Hon. Laila D. Galvez",
-    position: "Kagawad",
-    imageUrl: "https://picsum.photos/100/100?random=4",
-    termStart: "2023-10-30",
-    termEnd: "2026-10-30",
-  },
-  {
-    id: "5",
-    name: "Hon. Bladdy Mair F. Cambaliza",
-    position: "Kagawad",
-    imageUrl: "https://picsum.photos/100/100?random=5",
-    termStart: "2023-10-30",
-    termEnd: "2026-10-30",
-  },
+const OFFICIAL_STATUSES: Array<"Active" | "Inactive" | "Former"> = [
+  "Active",
+  "Inactive",
+  "Former",
 ];
 
-const initialUsers: UserAccount[] = [
-  {
-    id: "1",
-    name: "Michael King Cajucom",
-    username: "admin",
-    role: "Admin",
-    status: "Active",
-    lastLogin: "2025-11-23 08:00 AM",
-  },
-  {
-    id: "2",
-    name: "Reynaldo T. Maca",
-    username: "reynaldo_m",
-    role: "Staff",
-    status: "Active",
-    lastLogin: "2025-11-22 09:15 AM",
-  },
-  {
-    id: "3",
-    name: "Jean L. Limpahan",
-    username: "jean_l",
-    role: "Staff",
-    status: "Inactive",
-    lastLogin: "2025-11-10 05:00 PM",
-  },
-];
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  const message = (error as { response?: { data?: { message?: string } } })
+    ?.response?.data?.message;
+  return message || fallback;
+};
+
+const mapOfficialApiToUi = (official: OfficialApi): Official => ({
+  id: official.OfficialID,
+  residentId: official.ResidentID,
+  firstName: official.FirstName,
+  lastName: official.LastName,
+  name: `Hon. ${official.FirstName} ${official.LastName}`,
+  position: official.Position,
+  status: official.BStatus,
+  termStart: official.TermStart || undefined,
+  termEnd: official.TermEnd || undefined,
+  imageUrl: undefined,
+});
+
+const mapUserApiToUi = (user: UserAccountApi): UserAccount => ({
+  id: user.UserID,
+  name: user.Username,
+  username: user.Username,
+  role: user.Role,
+  status: user.AccStatus,
+  lastLogin: "Never",
+});
 
 const Settings: React.FC = () => {
+  const { logoSrc, setLogoSrc } = useBarangayLogo();
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
   const [activeTab, setActiveTab] = useState(0);
 
-  // -- State for Barangay Info --
   const [isEditingInfo, setIsEditingInfo] = useState(false);
-  const [barangayInfo, setBarangayInfo] = useState<BarangayInfo>({
-    name: "Barangay 619",
-    city: "Manila",
-    district: "Sampaloc",
-    address:
-      "Bata Street, Barangay 619, Zone 62, Bacood, Santa Mesa, Manila City, 1000, Metro Manila, Philippines",
-    phone: "09xxxxxxxxx",
-    telephone: "123-456",
-    email: "barangay619@gmail.com",
-  });
+  const [barangayInfo, setBarangayInfo] = useState<BarangayInfoForm>(
+    DEFAULT_BARANGAY_INFO,
+  );
+  const [savedBarangayInfo, setSavedBarangayInfo] = useState<BarangayInfoForm>(
+    DEFAULT_BARANGAY_INFO,
+  );
+  const [isGeneralLoading, setIsGeneralLoading] = useState(false);
+  const [isSavingInfo, setIsSavingInfo] = useState(false);
 
-  // -- State for System Info --
   const [isEditingSystem, setIsEditingSystem] = useState(false);
-  const [systemInfo, setSystemInfo] = useState<SystemInfo>({
-    name: "Local-Based Resident Record Management System",
-    description:
-      "The Local-Based Resident Record Management System is a digital platform designed to store and manage essential information about residents within Barangay 619. It allows authorized personnel to efficiently access and update resident records, ensuring accurate and organized data for internal administrative use. The system improves efficiency by centralizing information in a secure platform, making resident data management easier and more reliable.",
-    version: "1.0",
-  });
+  const [systemInfo, setSystemInfo] = useState<SystemInfo>(INITIAL_SYSTEM_INFO);
 
-  // -- State for Barangay Officials --
-  const [officials, setOfficials] = useState<Official[]>(initialOfficials);
+  const [officials, setOfficials] = useState<Official[]>([]);
+  const [isOfficialsLoading, setIsOfficialsLoading] = useState(false);
+  const [isOfficialsSubmitting, setIsOfficialsSubmitting] = useState(false);
+
+  const [users, setUsers] = useState<UserAccount[]>([]);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [isUsersSubmitting, setIsUsersSubmitting] = useState(false);
+  const [officialsPage, setOfficialsPage] = useState(1);
+  const [usersPage, setUsersPage] = useState(1);
+  const officialsRowsPerPage = 10;
+  const usersRowsPerPage = 10;
+
+  const [residentOptions, setResidentOptions] = useState<ResidentOption[]>([]);
+  const [isResidentsLoading, setIsResidentsLoading] = useState(false);
+
   const [isAddOfficialOpen, setIsAddOfficialOpen] = useState(false);
   const [isViewOfficialOpen, setIsViewOfficialOpen] = useState(false);
   const [selectedOfficial, setSelectedOfficial] = useState<Official | null>(
@@ -204,53 +223,191 @@ const Settings: React.FC = () => {
   );
   const [isEditingOfficial, setIsEditingOfficial] = useState(false);
 
-  // -- State for User Accounts --
-  const [users, setUsers] = useState<UserAccount[]>(initialUsers);
   const [isUserModalOpen, setIsUserModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
   const [userSearchQuery, setUserSearchQuery] = useState("");
-  const [userStatusFilter, setUserStatusFilter] = useState("All"); // 'All' | 'Active' | 'Inactive'
-  const [userFormData, setUserFormData] = useState<Partial<UserAccount>>({
+  const [userStatusFilter, setUserStatusFilter] = useState("All");
+  const [userFormData, setUserFormData] = useState<UserFormData>({
+    name: "",
+    username: "",
     role: "Staff",
     status: "Active",
   });
+  const [userPassword, setUserPassword] = useState("");
 
-  // Add Official Form State
-  const [newOfficialResident, setNewOfficialResident] = useState<{
-    id: number;
-    name: string;
-  } | null>(null);
+  const [newOfficialResident, setNewOfficialResident] =
+    useState<ResidentOption | null>(null);
   const [newOfficialPosition, setNewOfficialPosition] = useState("");
   const [newOfficialImage, setNewOfficialImage] = useState<string | null>(null);
   const [newOfficialTermStart, setNewOfficialTermStart] = useState("");
   const [newOfficialTermEnd, setNewOfficialTermEnd] = useState("");
 
-  // Edit Official Form State (Temporary holder for edits)
   const [editOfficialData, setEditOfficialData] = useState<Official | null>(
     null,
   );
 
+  const fetchBarangayInfo = useCallback(async () => {
+    setIsGeneralLoading(true);
+    try {
+      const info = await barangayInfoService.getInfo();
+      const mapped: BarangayInfoForm = {
+        ...DEFAULT_BARANGAY_INFO,
+        address: info.BarangayAddress || DEFAULT_BARANGAY_INFO.address,
+        phone: info.PhoneNum || "",
+        telephone: info.TelNum || "",
+        email: info.EmailAd || "",
+      };
+      setBarangayInfo(mapped);
+      setSavedBarangayInfo(mapped);
+    } catch (error: unknown) {
+      const message = getApiErrorMessage(
+        error,
+        "Failed to load barangay information.",
+      );
+
+      if (message.toLowerCase().includes("not configured")) {
+        setBarangayInfo(DEFAULT_BARANGAY_INFO);
+        setSavedBarangayInfo(DEFAULT_BARANGAY_INFO);
+        notify.info("Barangay information is not configured yet.");
+      } else {
+        notify.error(message);
+      }
+    } finally {
+      setIsGeneralLoading(false);
+    }
+  }, []);
+
+  const fetchOfficials = useCallback(async () => {
+    setIsOfficialsLoading(true);
+    try {
+      const data = await officialService.getAll();
+      setOfficials(data.map(mapOfficialApiToUi));
+    } catch {
+      notify.error("Failed to load officials.");
+    } finally {
+      setIsOfficialsLoading(false);
+    }
+  }, []);
+
+  const fetchUsers = useCallback(async () => {
+    setIsUsersLoading(true);
+    try {
+      const data = await userAccountService.getAll();
+      setUsers(data.map(mapUserApiToUi));
+    } catch {
+      notify.error("Failed to load user accounts.");
+    } finally {
+      setIsUsersLoading(false);
+    }
+  }, []);
+
+  const fetchResidents = useCallback(async () => {
+    setIsResidentsLoading(true);
+    try {
+      const data = await residentService.getAll();
+      const options = data
+        .map((resident: ResidentListItem) => ({
+          id: resident.ResidentID,
+          name: `${resident.LastName}, ${resident.FirstName}`,
+        }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      setResidentOptions(options);
+    } catch {
+      notify.error("Failed to load residents.");
+    } finally {
+      setIsResidentsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBarangayInfo();
+    fetchOfficials();
+    fetchUsers();
+    fetchResidents();
+  }, [fetchBarangayInfo, fetchOfficials, fetchUsers, fetchResidents]);
+
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
+    setOfficialsPage(1);
+    setUsersPage(1);
   };
 
-  // -- Handlers for Barangay Info --
   const handleInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setBarangayInfo({ ...barangayInfo, [e.target.name]: e.target.value });
   };
 
-  const saveInfo = () => setIsEditingInfo(false);
-  const cancelInfo = () => setIsEditingInfo(false);
+  const handleLogoUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
 
-  // -- Handlers for System Info --
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      notify.error("Please select a valid image file.");
+      event.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onloadend = () => {
+      const loadedResult =
+        typeof reader.result === "string" ? reader.result : "";
+
+      if (!loadedResult) {
+        notify.error("Failed to load selected logo image.");
+        return;
+      }
+
+      setLogoSrc(loadedResult);
+      notify.success("Barangay logo updated successfully.");
+    };
+
+    reader.onerror = () => {
+      notify.error("Failed to load selected logo image.");
+    };
+
+    reader.readAsDataURL(file);
+    event.target.value = "";
+  };
+
+  const saveInfo = async () => {
+    setIsSavingInfo(true);
+    try {
+      await barangayInfoService.updateInfo({
+        phoneNum: barangayInfo.phone || null,
+        telNum: barangayInfo.telephone || null,
+        emailAd: barangayInfo.email || null,
+        barangayAddress: barangayInfo.address || null,
+      });
+      setSavedBarangayInfo(barangayInfo);
+      setIsEditingInfo(false);
+      notify.success("Barangay details updated successfully.");
+    } catch (error: unknown) {
+      notify.error(
+        getApiErrorMessage(error, "Failed to update barangay info."),
+      );
+    } finally {
+      setIsSavingInfo(false);
+    }
+  };
+
+  const cancelInfo = () => {
+    setBarangayInfo(savedBarangayInfo);
+    setIsEditingInfo(false);
+  };
+
   const handleSystemChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSystemInfo({ ...systemInfo, [e.target.name]: e.target.value });
   };
 
-  const saveSystem = () => setIsEditingSystem(false);
-  const cancelSystem = () => setIsEditingSystem(false);
+  const saveSystem = () => {
+    setIsEditingSystem(false);
+    notify.success("System info updated.");
+  };
 
-  // -- Handlers for Officials --
+  const cancelSystem = () => setIsEditingSystem(false);
 
   const handleAddClick = () => {
     setNewOfficialResident(null);
@@ -261,18 +418,27 @@ const Settings: React.FC = () => {
     setIsAddOfficialOpen(true);
   };
 
-  const handleSaveNewOfficial = () => {
-    if (newOfficialResident && newOfficialPosition) {
-      const newOfficial: Official = {
-        id: Date.now().toString(),
-        name: `Hon. ${newOfficialResident.name}`, // Automatically adding Hon. prefix
+  const handleSaveNewOfficial = async () => {
+    if (!newOfficialResident || !newOfficialPosition || !newOfficialTermStart) {
+      notify.error("Resident, position, and term start are required.");
+      return;
+    }
+
+    setIsOfficialsSubmitting(true);
+    try {
+      await officialService.create({
+        residentId: newOfficialResident.id,
         position: newOfficialPosition,
-        imageUrl: newOfficialImage || "https://via.placeholder.com/100",
         termStart: newOfficialTermStart,
-        termEnd: newOfficialTermEnd,
-      };
-      setOfficials([...officials, newOfficial]);
+        termEnd: newOfficialTermEnd || null,
+      });
+      notify.success("Official added successfully.");
       setIsAddOfficialOpen(false);
+      await fetchOfficials();
+    } catch (error: unknown) {
+      notify.error(getApiErrorMessage(error, "Failed to add official."));
+    } finally {
+      setIsOfficialsSubmitting(false);
     }
   };
 
@@ -299,80 +465,205 @@ const Settings: React.FC = () => {
 
   const handleViewOfficial = (official: Official) => {
     setSelectedOfficial(official);
-    setEditOfficialData(official);
+    setEditOfficialData({ ...official });
     setIsEditingOfficial(false);
     setIsViewOfficialOpen(true);
   };
 
-  const handleUpdateOfficial = () => {
-    if (editOfficialData) {
-      setOfficials(
-        officials.map((off) =>
-          off.id === editOfficialData.id ? editOfficialData : off,
-        ),
-      );
-      setSelectedOfficial(editOfficialData);
+  const handleUpdateOfficial = async () => {
+    if (!editOfficialData) return;
+
+    setIsOfficialsSubmitting(true);
+    try {
+      await officialService.update(editOfficialData.id, {
+        position: editOfficialData.position,
+        termStart: editOfficialData.termStart,
+        termEnd: editOfficialData.termEnd || null,
+        bStatus: editOfficialData.status,
+      });
+      notify.success("Official updated successfully.");
+      setSelectedOfficial({ ...editOfficialData });
       setIsEditingOfficial(false);
+      await fetchOfficials();
+    } catch (error: unknown) {
+      notify.error(getApiErrorMessage(error, "Failed to update official."));
+    } finally {
+      setIsOfficialsSubmitting(false);
     }
   };
 
-  const handleDeleteOfficial = (id: string) => {
-    setOfficials(officials.filter((o) => o.id !== id));
-    setIsViewOfficialOpen(false);
+  const handleDeleteOfficial = async (id: number) => {
+    setIsOfficialsSubmitting(true);
+    try {
+      await officialService.update(id, { bStatus: "Former" });
+      notify.success("Official marked as former.");
+      setIsViewOfficialOpen(false);
+      setSelectedOfficial(null);
+      setEditOfficialData(null);
+      await fetchOfficials();
+    } catch (error: unknown) {
+      notify.error(
+        getApiErrorMessage(error, "Failed to update official status."),
+      );
+    } finally {
+      setIsOfficialsSubmitting(false);
+    }
   };
-
-  // -- Handlers for User Accounts --
 
   const handleOpenUserModal = (user?: UserAccount) => {
     if (user) {
       setSelectedUser(user);
-      setUserFormData({ ...user });
+      setUserFormData({
+        name: user.name,
+        username: user.username,
+        role: user.role,
+        status: user.status,
+      });
     } else {
       setSelectedUser(null);
-      setUserFormData({ role: "Staff", status: "Active" });
+      setUserFormData({
+        name: "",
+        username: "",
+        role: "Staff",
+        status: "Active",
+      });
     }
+    setUserPassword("");
     setIsUserModalOpen(true);
   };
 
-  const handleSaveUser = () => {
-    if (userFormData.name && userFormData.username) {
+  const handleSaveUser = async () => {
+    const trimmedUsername = userFormData.username.trim();
+
+    if (!trimmedUsername) {
+      notify.error("Username is required.");
+      return;
+    }
+
+    if (!selectedUser && !userPassword.trim()) {
+      notify.error("Password is required for new accounts.");
+      return;
+    }
+
+    setIsUsersSubmitting(true);
+    try {
       if (selectedUser) {
-        setUsers(
-          users.map((u) =>
-            u.id === selectedUser.id
-              ? { ...u, ...(userFormData as UserAccount) }
-              : u,
-          ),
-        );
+        const updatePayload: {
+          username?: string;
+          password?: string;
+          role?: "Admin" | "Staff";
+        } = {};
+
+        if (trimmedUsername !== selectedUser.username) {
+          updatePayload.username = trimmedUsername;
+        }
+
+        if (userFormData.role !== selectedUser.role) {
+          updatePayload.role = userFormData.role;
+        }
+
+        if (userPassword.trim()) {
+          updatePayload.password = userPassword.trim();
+        }
+
+        if (Object.keys(updatePayload).length > 0) {
+          await userAccountService.update(selectedUser.id, updatePayload);
+        }
+
+        if (userFormData.status !== selectedUser.status) {
+          await userAccountService.updateStatus(
+            selectedUser.id,
+            userFormData.status,
+          );
+        }
+
+        notify.success("User account updated successfully.");
       } else {
-        const newUser: UserAccount = {
-          ...(userFormData as UserAccount),
-          id: Date.now().toString(),
-        };
-        setUsers([...users, newUser]);
+        const created = await userAccountService.create({
+          username: trimmedUsername,
+          password: userPassword.trim(),
+          role: userFormData.role,
+        });
+
+        if (userFormData.status === "Inactive") {
+          await userAccountService.updateStatus(created.userId, "Inactive");
+        }
+
+        notify.success("User account created successfully.");
       }
+
       setIsUserModalOpen(false);
+      await fetchUsers();
+    } catch (error: unknown) {
+      notify.error(getApiErrorMessage(error, "Failed to save user account."));
+    } finally {
+      setIsUsersSubmitting(false);
     }
   };
 
-  const handleToggleUserStatus = (id: string) => {
-    setUsers(
-      users.map((u) =>
-        u.id === id
-          ? { ...u, status: u.status === "Active" ? "Inactive" : "Active" }
-          : u,
-      ),
-    );
+  const handleToggleUserStatus = async (id: number) => {
+    const targetUser = users.find((user) => user.id === id);
+    if (!targetUser) return;
+
+    const nextStatus = targetUser.status === "Active" ? "Inactive" : "Active";
+
+    try {
+      await userAccountService.updateStatus(id, nextStatus);
+      setUsers((prev) =>
+        prev.map((user) =>
+          user.id === id ? { ...user, status: nextStatus } : user,
+        ),
+      );
+      notify.success(
+        `Account ${nextStatus === "Active" ? "activated" : "deactivated"}.`,
+      );
+    } catch (error: unknown) {
+      notify.error(
+        getApiErrorMessage(error, "Failed to update account status."),
+      );
+    }
   };
 
-  const filteredUsers = users.filter((user) => {
-    const matchesSearch =
-      user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-      user.username.toLowerCase().includes(userSearchQuery.toLowerCase());
-    const matchesStatus =
-      userStatusFilter === "All" || user.status === userStatusFilter;
-    return matchesSearch && matchesStatus;
-  });
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      const matchesSearch =
+        user.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
+        user.username.toLowerCase().includes(userSearchQuery.toLowerCase());
+      const matchesStatus =
+        userStatusFilter === "All" || user.status === userStatusFilter;
+      return matchesSearch && matchesStatus;
+    });
+  }, [users, userSearchQuery, userStatusFilter]);
+
+  const officialsTotalPages = Math.max(
+    1,
+    Math.ceil(officials.length / officialsRowsPerPage),
+  );
+  const paginatedOfficials = officials.slice(
+    (officialsPage - 1) * officialsRowsPerPage,
+    officialsPage * officialsRowsPerPage,
+  );
+
+  const usersTotalPages = Math.max(
+    1,
+    Math.ceil(filteredUsers.length / usersRowsPerPage),
+  );
+  const paginatedUsers = filteredUsers.slice(
+    (usersPage - 1) * usersRowsPerPage,
+    usersPage * usersRowsPerPage,
+  );
+
+  useEffect(() => {
+    if (officialsPage > officialsTotalPages) {
+      setOfficialsPage(officialsTotalPages);
+    }
+  }, [officialsPage, officialsTotalPages]);
+
+  useEffect(() => {
+    if (usersPage > usersTotalPages) {
+      setUsersPage(usersTotalPages);
+    }
+  }, [usersPage, usersTotalPages]);
 
   return (
     <Box
@@ -384,7 +675,6 @@ const Settings: React.FC = () => {
         flexDirection: "column",
       }}
     >
-      {/* Page Title & Subtitle */}
       <Box sx={{ mb: 4 }}>
         <Typography
           variant="h4"
@@ -398,7 +688,6 @@ const Settings: React.FC = () => {
         </Typography>
       </Box>
 
-      {/* Main Container */}
       <Paper
         elevation={0}
         sx={{
@@ -411,7 +700,6 @@ const Settings: React.FC = () => {
           bgcolor: "#f8fafc",
         }}
       >
-        {/* Tabs Header */}
         <Box
           sx={{
             borderBottom: 1,
@@ -439,11 +727,9 @@ const Settings: React.FC = () => {
           </Tabs>
         </Box>
 
-        {/* Tab Content: General */}
         {activeTab === 0 && (
           <Box sx={{ p: 4, overflowY: "auto", flex: 1 }}>
             <Grid container spacing={3}>
-              {/* Left Column: Logo & Barangay Information */}
               <Grid size={{ xs: 12, lg: 8 }}>
                 <Paper
                   elevation={0}
@@ -462,7 +748,6 @@ const Settings: React.FC = () => {
                       gap: 4,
                     }}
                   >
-                    {/* Logo Section */}
                     <Box sx={{ flexShrink: 0 }}>
                       <Typography
                         variant="subtitle2"
@@ -479,7 +764,7 @@ const Settings: React.FC = () => {
                         }}
                       >
                         <Avatar
-                          src="https://media.discordapp.net/attachments/1438161259462787073/1439120214435561483/att.g_4t85zYhMdID5Q6sk8PT3DHrEtdAnWmgwuz9b1ET8k.jpg?ex=69326924&is=693117a4&hm=336d9adb9e14a6bec2875d0f0c81cc344377769c2a78645b696f159ecb1feb81&=&format=webp&width=519&height=519"
+                          src={logoSrc}
                           sx={{
                             width: 160,
                             height: 160,
@@ -488,6 +773,7 @@ const Settings: React.FC = () => {
                           }}
                         />
                         <IconButton
+                          onClick={() => logoInputRef.current?.click()}
                           sx={{
                             position: "absolute",
                             bottom: 8,
@@ -497,13 +783,20 @@ const Settings: React.FC = () => {
                             boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
                             "&:hover": { bgcolor: "#f3f4f6" },
                           }}
+                          disabled={isGeneralLoading || isSavingInfo}
                         >
                           <Camera size={16} className="text-gray-600" />
                         </IconButton>
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/*"
+                          style={{ display: "none" }}
+                          onChange={handleLogoUpload}
+                        />
                       </Box>
                     </Box>
 
-                    {/* Barangay Information Section */}
                     <Box sx={{ flex: 1 }}>
                       <Box
                         sx={{
@@ -534,6 +827,7 @@ const Settings: React.FC = () => {
                             size="small"
                             onClick={() => setIsEditingInfo(true)}
                             sx={{ bgcolor: "#f1f5f9" }}
+                            disabled={isGeneralLoading}
                           >
                             <Edit2 size={16} />
                           </IconButton>
@@ -547,6 +841,7 @@ const Settings: React.FC = () => {
                                 color: "#6b7280",
                                 textTransform: "none",
                               }}
+                              disabled={isSavingInfo}
                             >
                               Cancel
                             </Button>
@@ -556,223 +851,232 @@ const Settings: React.FC = () => {
                               onClick={saveInfo}
                               startIcon={<Save size={16} />}
                               sx={{ textTransform: "none" }}
+                              disabled={isSavingInfo}
                             >
-                              Save
+                              {isSavingInfo ? "Saving..." : "Save"}
                             </Button>
                           </Box>
                         )}
                       </Box>
 
-                      <Box
-                        component="form"
-                        sx={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 2,
-                        }}
-                      >
-                        {isEditingInfo ? (
-                          <Grid container spacing={2}>
-                            <Grid size={{ xs: 12, sm: 12 }}>
-                              <TextField
-                                fullWidth
-                                label="Barangay Name"
-                                name="name"
-                                value={barangayInfo.name}
-                                onChange={handleInfoChange}
-                                size="small"
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6 }}>
-                              <TextField
-                                fullWidth
-                                label="District"
-                                name="district"
-                                value={barangayInfo.district}
-                                onChange={handleInfoChange}
-                                size="small"
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6 }}>
-                              <TextField
-                                fullWidth
-                                label="City / Municipality"
-                                name="city"
-                                value={barangayInfo.city}
-                                onChange={handleInfoChange}
-                                size="small"
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12 }}>
-                              <TextField
-                                fullWidth
-                                multiline
-                                rows={2}
-                                label="Address"
-                                name="address"
-                                value={barangayInfo.address}
-                                onChange={handleInfoChange}
-                                size="small"
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6 }}>
-                              <TextField
-                                fullWidth
-                                label="Phone Number"
-                                name="phone"
-                                value={barangayInfo.phone}
-                                onChange={handleInfoChange}
-                                size="small"
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12, sm: 6 }}>
-                              <TextField
-                                fullWidth
-                                label="Telephone Number"
-                                name="telephone"
-                                value={barangayInfo.telephone}
-                                onChange={handleInfoChange}
-                                size="small"
-                              />
-                            </Grid>
-                            <Grid size={{ xs: 12 }}>
-                              <TextField
-                                fullWidth
-                                label="Email Address"
-                                name="email"
-                                value={barangayInfo.email}
-                                onChange={handleInfoChange}
-                                size="small"
-                              />
-                            </Grid>
-                          </Grid>
-                        ) : (
-                          <Stack spacing={2.5}>
-                            <Box display="flex" flexDirection="column">
-                              <Typography
-                                variant="caption"
-                                fontWeight="bold"
-                                sx={{
-                                  color: "#94a3b8",
-                                  textTransform: "uppercase",
-                                  mb: 0.5,
-                                }}
-                              >
-                                Barangay Name
-                              </Typography>
-                              <Typography color="#1e293b" fontWeight="600">
-                                {barangayInfo.name}
-                              </Typography>
-                            </Box>
+                      {isGeneralLoading ? (
+                        <Typography color="text.secondary">
+                          Loading barangay info...
+                        </Typography>
+                      ) : (
+                        <Box
+                          component="form"
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 2,
+                          }}
+                        >
+                          {isEditingInfo ? (
                             <Grid container spacing={2}>
-                              <Grid size={{ xs: 6 }}>
-                                <Typography
-                                  variant="caption"
-                                  fontWeight="bold"
-                                  sx={{
-                                    color: "#94a3b8",
-                                    textTransform: "uppercase",
-                                    mb: 0.5,
-                                  }}
-                                >
-                                  City / Municipality
-                                </Typography>
-                                <Typography color="#1e293b" fontWeight="600">
-                                  {barangayInfo.city}
-                                </Typography>
+                              <Grid size={{ xs: 12, sm: 12 }}>
+                                <TextField
+                                  fullWidth
+                                  label="Barangay Name"
+                                  name="name"
+                                  value={barangayInfo.name}
+                                  onChange={handleInfoChange}
+                                  size="small"
+                                  disabled
+                                />
                               </Grid>
-                              <Grid size={{ xs: 6 }}>
-                                <Typography
-                                  variant="caption"
-                                  fontWeight="bold"
-                                  sx={{
-                                    color: "#94a3b8",
-                                    textTransform: "uppercase",
-                                    mb: 0.5,
-                                  }}
-                                >
-                                  District
-                                </Typography>
-                                <Typography color="#1e293b" fontWeight="600">
-                                  {barangayInfo.district}
-                                </Typography>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  label="District"
+                                  name="district"
+                                  value={barangayInfo.district}
+                                  onChange={handleInfoChange}
+                                  size="small"
+                                  disabled
+                                />
                               </Grid>
-                            </Grid>
-                            <Box display="flex" flexDirection="column">
-                              <Typography
-                                variant="caption"
-                                fontWeight="bold"
-                                sx={{
-                                  color: "#94a3b8",
-                                  textTransform: "uppercase",
-                                  mb: 0.5,
-                                }}
-                              >
-                                Official Address
-                              </Typography>
-                              <Typography color="#1e293b" fontWeight="600">
-                                {barangayInfo.address}
-                              </Typography>
-                            </Box>
-                            <Grid container spacing={2}>
-                              <Grid size={{ xs: 6 }}>
-                                <Typography
-                                  variant="caption"
-                                  fontWeight="bold"
-                                  sx={{
-                                    color: "#94a3b8",
-                                    textTransform: "uppercase",
-                                    mb: 0.5,
-                                  }}
-                                >
-                                  Mobile Number
-                                </Typography>
-                                <Typography color="#1e293b" fontWeight="600">
-                                  {barangayInfo.phone}
-                                </Typography>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  label="City / Municipality"
+                                  name="city"
+                                  value={barangayInfo.city}
+                                  onChange={handleInfoChange}
+                                  size="small"
+                                  disabled
+                                />
                               </Grid>
-                              <Grid size={{ xs: 6 }}>
-                                <Typography
-                                  variant="caption"
-                                  fontWeight="bold"
-                                  sx={{
-                                    color: "#94a3b8",
-                                    textTransform: "uppercase",
-                                    mb: 0.5,
-                                  }}
-                                >
-                                  Telephone
-                                </Typography>
-                                <Typography color="#1e293b" fontWeight="600">
-                                  {barangayInfo.telephone}
-                                </Typography>
+                              <Grid size={{ xs: 12 }}>
+                                <TextField
+                                  fullWidth
+                                  multiline
+                                  rows={2}
+                                  label="Address"
+                                  name="address"
+                                  value={barangayInfo.address}
+                                  onChange={handleInfoChange}
+                                  size="small"
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  label="Phone Number"
+                                  name="phone"
+                                  value={barangayInfo.phone}
+                                  onChange={handleInfoChange}
+                                  size="small"
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12, sm: 6 }}>
+                                <TextField
+                                  fullWidth
+                                  label="Telephone Number"
+                                  name="telephone"
+                                  value={barangayInfo.telephone}
+                                  onChange={handleInfoChange}
+                                  size="small"
+                                />
+                              </Grid>
+                              <Grid size={{ xs: 12 }}>
+                                <TextField
+                                  fullWidth
+                                  label="Email Address"
+                                  name="email"
+                                  value={barangayInfo.email}
+                                  onChange={handleInfoChange}
+                                  size="small"
+                                />
                               </Grid>
                             </Grid>
-                            <Box display="flex" flexDirection="column">
-                              <Typography
-                                variant="caption"
-                                fontWeight="bold"
-                                sx={{
-                                  color: "#94a3b8",
-                                  textTransform: "uppercase",
-                                  mb: 0.5,
-                                }}
-                              >
-                                Email Address
-                              </Typography>
-                              <Typography color="#1e293b" fontWeight="600">
-                                {barangayInfo.email}
-                              </Typography>
-                            </Box>
-                          </Stack>
-                        )}
-                      </Box>
+                          ) : (
+                            <Stack spacing={2.5}>
+                              <Box display="flex" flexDirection="column">
+                                <Typography
+                                  variant="caption"
+                                  fontWeight="bold"
+                                  sx={{
+                                    color: "#94a3b8",
+                                    textTransform: "uppercase",
+                                    mb: 0.5,
+                                  }}
+                                >
+                                  Barangay Name
+                                </Typography>
+                                <Typography color="#1e293b" fontWeight="600">
+                                  {barangayInfo.name}
+                                </Typography>
+                              </Box>
+                              <Grid container spacing={2}>
+                                <Grid size={{ xs: 6 }}>
+                                  <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    sx={{
+                                      color: "#94a3b8",
+                                      textTransform: "uppercase",
+                                      mb: 0.5,
+                                    }}
+                                  >
+                                    City / Municipality
+                                  </Typography>
+                                  <Typography color="#1e293b" fontWeight="600">
+                                    {barangayInfo.city}
+                                  </Typography>
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                  <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    sx={{
+                                      color: "#94a3b8",
+                                      textTransform: "uppercase",
+                                      mb: 0.5,
+                                    }}
+                                  >
+                                    District
+                                  </Typography>
+                                  <Typography color="#1e293b" fontWeight="600">
+                                    {barangayInfo.district}
+                                  </Typography>
+                                </Grid>
+                              </Grid>
+                              <Box display="flex" flexDirection="column">
+                                <Typography
+                                  variant="caption"
+                                  fontWeight="bold"
+                                  sx={{
+                                    color: "#94a3b8",
+                                    textTransform: "uppercase",
+                                    mb: 0.5,
+                                  }}
+                                >
+                                  Official Address
+                                </Typography>
+                                <Typography color="#1e293b" fontWeight="600">
+                                  {barangayInfo.address || "N/A"}
+                                </Typography>
+                              </Box>
+                              <Grid container spacing={2}>
+                                <Grid size={{ xs: 6 }}>
+                                  <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    sx={{
+                                      color: "#94a3b8",
+                                      textTransform: "uppercase",
+                                      mb: 0.5,
+                                    }}
+                                  >
+                                    Mobile Number
+                                  </Typography>
+                                  <Typography color="#1e293b" fontWeight="600">
+                                    {barangayInfo.phone || "N/A"}
+                                  </Typography>
+                                </Grid>
+                                <Grid size={{ xs: 6 }}>
+                                  <Typography
+                                    variant="caption"
+                                    fontWeight="bold"
+                                    sx={{
+                                      color: "#94a3b8",
+                                      textTransform: "uppercase",
+                                      mb: 0.5,
+                                    }}
+                                  >
+                                    Telephone
+                                  </Typography>
+                                  <Typography color="#1e293b" fontWeight="600">
+                                    {barangayInfo.telephone || "N/A"}
+                                  </Typography>
+                                </Grid>
+                              </Grid>
+                              <Box display="flex" flexDirection="column">
+                                <Typography
+                                  variant="caption"
+                                  fontWeight="bold"
+                                  sx={{
+                                    color: "#94a3b8",
+                                    textTransform: "uppercase",
+                                    mb: 0.5,
+                                  }}
+                                >
+                                  Email Address
+                                </Typography>
+                                <Typography color="#1e293b" fontWeight="600">
+                                  {barangayInfo.email || "N/A"}
+                                </Typography>
+                              </Box>
+                            </Stack>
+                          )}
+                        </Box>
+                      )}
                     </Box>
                   </Box>
                 </Paper>
               </Grid>
 
-              {/* Right Column: System Information Sidebar */}
               <Grid size={{ xs: 12, lg: 4 }}>
                 <Paper
                   elevation={0}
@@ -943,7 +1247,6 @@ const Settings: React.FC = () => {
           </Box>
         )}
 
-        {/* Tab Content: Officials */}
         {activeTab === 1 && (
           <Box
             sx={{
@@ -1009,48 +1312,77 @@ const Settings: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {officials.map((official) => (
-                    <TableRow key={official.id} hover>
-                      <TableCell>
-                        <Avatar
-                          src={official.imageUrl}
-                          sx={{ width: 40, height: 40 }}
-                        />
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 500 }}>
-                        {official.name}
-                      </TableCell>
-                      <TableCell>
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
-                          {official.position}
-                        </span>
-                      </TableCell>
-                      <TableCell
-                        sx={{ color: "text.secondary", fontSize: "0.875rem" }}
-                      >
-                        {official.termStart || "N/A"} -{" "}
-                        {official.termEnd || "N/A"}
-                      </TableCell>
-                      <TableCell align="center">
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          startIcon={<Eye size={16} />}
-                          onClick={() => handleViewOfficial(official)}
-                          sx={{ textTransform: "none" }}
-                        >
-                          View
-                        </Button>
+                  {isOfficialsLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Loading officials...
+                        </Typography>
                       </TableCell>
                     </TableRow>
-                  ))}
+                  ) : officials.length > 0 ? (
+                    paginatedOfficials.map((official) => (
+                      <TableRow key={official.id} hover>
+                        <TableCell>
+                          <Avatar
+                            src={official.imageUrl}
+                            sx={{ width: 40, height: 40, bgcolor: "#e2e8f0" }}
+                          >
+                            {official.firstName.charAt(0)}
+                          </Avatar>
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 500 }}>
+                          {official.name}
+                        </TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700">
+                            {official.position}
+                          </span>
+                        </TableCell>
+                        <TableCell
+                          sx={{ color: "text.secondary", fontSize: "0.875rem" }}
+                        >
+                          {official.termStart || "N/A"} -{" "}
+                          {official.termEnd || "N/A"}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            startIcon={<Eye size={16} />}
+                            onClick={() => handleViewOfficial(official)}
+                            sx={{ textTransform: "none" }}
+                          >
+                            View
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
+                        <Typography variant="body1" color="text.secondary">
+                          No officials found.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
+
+            <Box sx={{ display: "flex", justifyContent: "center", pt: 2 }}>
+              <Pagination
+                count={officialsTotalPages}
+                color="primary"
+                shape="rounded"
+                page={officialsPage}
+                onChange={(_event, value) => setOfficialsPage(value)}
+              />
+            </Box>
           </Box>
         )}
 
-        {/* Tab Content: User Accounts */}
         {activeTab === 2 && (
           <Box
             sx={{
@@ -1093,7 +1425,6 @@ const Settings: React.FC = () => {
               </Button>
             </Box>
 
-            {/* Search & Filter Bar for User Accounts */}
             <Box
               sx={{
                 mb: 3,
@@ -1107,7 +1438,10 @@ const Settings: React.FC = () => {
                 placeholder="Search account by name or username..."
                 size="small"
                 value={userSearchQuery}
-                onChange={(e) => setUserSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setUserSearchQuery(e.target.value);
+                  setUsersPage(1);
+                }}
                 sx={{
                   flex: 1,
                   maxWidth: 400,
@@ -1126,7 +1460,10 @@ const Settings: React.FC = () => {
                     <InputAdornment position="end">
                       <IconButton
                         size="small"
-                        onClick={() => setUserSearchQuery("")}
+                        onClick={() => {
+                          setUserSearchQuery("");
+                          setUsersPage(1);
+                        }}
                       >
                         <X size={16} />
                       </IconButton>
@@ -1151,7 +1488,10 @@ const Settings: React.FC = () => {
                 <FormControl size="small" sx={{ minWidth: 150 }}>
                   <Select
                     value={userStatusFilter}
-                    onChange={(e) => setUserStatusFilter(e.target.value)}
+                    onChange={(e) => {
+                      setUserStatusFilter(e.target.value);
+                      setUsersPage(1);
+                    }}
                     sx={{
                       borderRadius: 2.5,
                       bgcolor: "white",
@@ -1202,8 +1542,16 @@ const Settings: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {filteredUsers.length > 0 ? (
-                    filteredUsers.map((user) => (
+                  {isUsersLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                        <Typography variant="body1" color="text.secondary">
+                          Loading user accounts...
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredUsers.length > 0 ? (
+                    paginatedUsers.map((user) => (
                       <TableRow key={user.id} hover>
                         <TableCell>
                           <Box
@@ -1346,13 +1694,20 @@ const Settings: React.FC = () => {
                 </TableBody>
               </Table>
             </TableContainer>
+
+            <Box sx={{ display: "flex", justifyContent: "center", pt: 2 }}>
+              <Pagination
+                count={usersTotalPages}
+                color="primary"
+                shape="rounded"
+                page={usersPage}
+                onChange={(_event, value) => setUsersPage(value)}
+              />
+            </Box>
           </Box>
         )}
       </Paper>
 
-      {/* --- Dialogs --- */}
-
-      {/* User Account Modal */}
       <Dialog
         open={isUserModalOpen}
         onClose={() => setIsUserModalOpen(false)}
@@ -1376,7 +1731,6 @@ const Settings: React.FC = () => {
         </DialogTitle>
         <DialogContent dividers>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 3, py: 1 }}>
-            {/* 1. Name Selection / Entry */}
             <Box>
               <Typography
                 variant="subtitle2"
@@ -1385,10 +1739,11 @@ const Settings: React.FC = () => {
                 Full Name
               </Typography>
               <Autocomplete
-                options={mockResidents}
+                options={residentOptions}
+                loading={isResidentsLoading}
                 getOptionLabel={(option) => option.name}
                 value={
-                  mockResidents.find((r) => r.name === userFormData.name) ||
+                  residentOptions.find((r) => r.name === userFormData.name) ||
                   null
                 }
                 onChange={(_event, newValue) =>
@@ -1408,7 +1763,6 @@ const Settings: React.FC = () => {
               />
             </Box>
 
-            {/* 2. Credentials */}
             <Box>
               <Typography
                 variant="subtitle2"
@@ -1420,7 +1774,7 @@ const Settings: React.FC = () => {
                 fullWidth
                 size="small"
                 placeholder="Choose a unique username"
-                value={userFormData.username || ""}
+                value={userFormData.username}
                 onChange={(e) =>
                   setUserFormData({ ...userFormData, username: e.target.value })
                 }
@@ -1443,17 +1797,18 @@ const Settings: React.FC = () => {
                     ? "Leave blank to keep current"
                     : "Set initial password"
                 }
+                value={userPassword}
+                onChange={(e) => setUserPassword(e.target.value)}
               />
             </Box>
 
-            {/* 3. Role & Status */}
             <Grid container spacing={2}>
               <Grid size={{ xs: 6 }}>
                 <FormControl fullWidth size="small">
                   <InputLabel>Account Role</InputLabel>
                   <Select
                     label="Account Role"
-                    value={userFormData.role || "Staff"}
+                    value={userFormData.role}
                     onChange={(e) =>
                       setUserFormData({
                         ...userFormData,
@@ -1471,7 +1826,7 @@ const Settings: React.FC = () => {
                   <InputLabel>Status</InputLabel>
                   <Select
                     label="Status"
-                    value={userFormData.status || "Active"}
+                    value={userFormData.status}
                     onChange={(e) =>
                       setUserFormData({
                         ...userFormData,
@@ -1491,21 +1846,29 @@ const Settings: React.FC = () => {
           <Button
             onClick={() => setIsUserModalOpen(false)}
             sx={{ color: "#6b7280" }}
+            disabled={isUsersSubmitting}
           >
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={handleSaveUser}
-            disabled={!userFormData.name || !userFormData.username}
+            disabled={
+              !userFormData.username.trim() ||
+              (!selectedUser && !userPassword.trim()) ||
+              isUsersSubmitting
+            }
             sx={{ borderRadius: 2 }}
           >
-            {selectedUser ? "Update Account" : "Create Account"}
+            {isUsersSubmitting
+              ? "Saving..."
+              : selectedUser
+                ? "Update Account"
+                : "Create Account"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* Official Dialogs (Add & View) */}
       <Dialog
         open={isAddOfficialOpen}
         onClose={() => setIsAddOfficialOpen(false)}
@@ -1537,7 +1900,8 @@ const Settings: React.FC = () => {
                 Select Resident
               </Typography>
               <Autocomplete
-                options={mockResidents}
+                options={residentOptions}
+                loading={isResidentsLoading}
                 getOptionLabel={(option) => option.name}
                 value={newOfficialResident}
                 onChange={(_event, newValue) =>
@@ -1560,13 +1924,20 @@ const Settings: React.FC = () => {
               >
                 Position
               </Typography>
-              <TextField
-                fullWidth
-                size="small"
-                placeholder="e.g. Captain, Kagawad, Secretary"
-                value={newOfficialPosition}
-                onChange={(e) => setNewOfficialPosition(e.target.value)}
-              />
+              <FormControl fullWidth size="small">
+                <InputLabel>Position</InputLabel>
+                <Select
+                  label="Position"
+                  value={newOfficialPosition}
+                  onChange={(e) => setNewOfficialPosition(e.target.value)}
+                >
+                  {OFFICIAL_POSITIONS.map((position) => (
+                    <MenuItem key={position} value={position}>
+                      {position}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Box>
             <Box>
               <Typography
@@ -1634,16 +2005,22 @@ const Settings: React.FC = () => {
           <Button
             onClick={() => setIsAddOfficialOpen(false)}
             sx={{ color: "#6b7280" }}
+            disabled={isOfficialsSubmitting}
           >
             Cancel
           </Button>
           <Button
             variant="contained"
             onClick={handleSaveNewOfficial}
-            disabled={!newOfficialResident || !newOfficialPosition}
+            disabled={
+              !newOfficialResident ||
+              !newOfficialPosition ||
+              !newOfficialTermStart ||
+              isOfficialsSubmitting
+            }
             sx={{ borderRadius: 2 }}
           >
-            Add Official
+            {isOfficialsSubmitting ? "Adding..." : "Add Official"}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1692,7 +2069,9 @@ const Settings: React.FC = () => {
                       border: "3px solid white",
                       boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
                     }}
-                  />
+                  >
+                    {editOfficialData.firstName.charAt(0)}
+                  </Avatar>
                   {isEditingOfficial && (
                     <IconButton
                       component="label"
@@ -1722,24 +2101,62 @@ const Settings: React.FC = () => {
                 </Typography>
                 {!isEditingOfficial ? (
                   <Chip
-                    label={selectedOfficial.position}
+                    label={`${selectedOfficial.position} (${selectedOfficial.status})`}
                     color="primary"
                     size="small"
                     sx={{ mt: 1 }}
                   />
                 ) : (
-                  <TextField
-                    size="small"
-                    value={editOfficialData.position}
-                    onChange={(e) =>
-                      setEditOfficialData({
-                        ...editOfficialData,
-                        position: e.target.value,
-                      })
-                    }
-                    sx={{ mt: 1, width: "200px" }}
-                    placeholder="Position"
-                  />
+                  <Box
+                    sx={{
+                      mt: 1,
+                      display: "flex",
+                      gap: 1,
+                      justifyContent: "center",
+                    }}
+                  >
+                    <FormControl size="small" sx={{ width: 180 }}>
+                      <InputLabel>Position</InputLabel>
+                      <Select
+                        label="Position"
+                        value={editOfficialData.position}
+                        onChange={(e) =>
+                          setEditOfficialData({
+                            ...editOfficialData,
+                            position: e.target.value,
+                          })
+                        }
+                      >
+                        {OFFICIAL_POSITIONS.map((position) => (
+                          <MenuItem key={position} value={position}>
+                            {position}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                    <FormControl size="small" sx={{ width: 140 }}>
+                      <InputLabel>Status</InputLabel>
+                      <Select
+                        label="Status"
+                        value={editOfficialData.status}
+                        onChange={(e) =>
+                          setEditOfficialData({
+                            ...editOfficialData,
+                            status: e.target.value as
+                              | "Active"
+                              | "Inactive"
+                              | "Former",
+                          })
+                        }
+                      >
+                        {OFFICIAL_STATUSES.map((status) => (
+                          <MenuItem key={status} value={status}>
+                            {status}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Box>
                 )}
               </Box>
               <Divider />
@@ -1823,8 +2240,9 @@ const Settings: React.FC = () => {
             onClick={() =>
               selectedOfficial && handleDeleteOfficial(selectedOfficial.id)
             }
+            disabled={isOfficialsSubmitting}
           >
-            Remove
+            Mark Former
           </Button>
           <Box>
             {isEditingOfficial ? (
@@ -1832,11 +2250,16 @@ const Settings: React.FC = () => {
                 <Button
                   onClick={() => setIsEditingOfficial(false)}
                   sx={{ color: "#6b7280", mr: 1 }}
+                  disabled={isOfficialsSubmitting}
                 >
                   Cancel
                 </Button>
-                <Button variant="contained" onClick={handleUpdateOfficial}>
-                  Save Changes
+                <Button
+                  variant="contained"
+                  onClick={handleUpdateOfficial}
+                  disabled={isOfficialsSubmitting}
+                >
+                  {isOfficialsSubmitting ? "Saving..." : "Save Changes"}
                 </Button>
               </>
             ) : (

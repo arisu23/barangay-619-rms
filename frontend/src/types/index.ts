@@ -220,6 +220,15 @@ export interface AuditLog {
   Timestamp: string;
 }
 
+export interface AuditPagination {
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+  hasNext: boolean;
+  hasPrev: boolean;
+}
+
 // ==========================================
 // Backup & Restore
 // ==========================================
@@ -227,9 +236,9 @@ export interface BackupLog {
   BackupID: number;
   FileName: string;
   FilePath: string;
+  DateCreated: string;
+  BackupStatus: "Successful" | "Failed" | "Pending";
   BackupType: string;
-  CreatedAt: string;
-  CreatedBy?: number;
 }
 
 // ==========================================
@@ -262,15 +271,100 @@ export interface DashboardStats {
 // ==========================================
 // Reports
 // ==========================================
-export interface DemographicsSummary {
-  totalPopulation: number;
-  categories: DemographicCategory[];
+export interface ReportDemographicsSummary {
+  stats: {
+    inhabitants: number;
+    households: number;
+    families: number;
+    voters: number;
+    seniors: number;
+    pwd: number;
+    soloParent: number;
+    indigent: number;
+  };
+  charts: {
+    ageGroups: Array<{
+      name: string;
+      value: number;
+    }>;
+    employment: Array<{
+      name: string;
+      value: number;
+      color: string;
+    }>;
+  };
 }
 
-export interface DemographicCategory {
-  category: string;
-  count: number;
-  percentage: number;
+export interface ReportDemographicsResident {
+  ResidentID: number;
+  LastName: string;
+  FirstName: string;
+  MiddleName?: string | null;
+  Age: number;
+  Sex: string;
+  CivilStatus: string;
+  Citizenship: string;
+  Household?: string | null;
+  Street?: string | null;
+}
+
+export interface ReportDemographicsCategoryResponse {
+  data: ReportDemographicsResident[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export interface ReportFormARecord {
+  LastName: string;
+  FirstName: string;
+  MiddleName?: string | null;
+  Suffix?: string | null;
+  PlaceOfBirth?: string | null;
+  DateOfBirth?: string | null;
+  Age: number;
+  Sex: string;
+  CivilStatus: string;
+  Citizenship: string;
+  Occupation?: string | null;
+  Household?: string | null;
+  Street?: string | null;
+  Barangay?: string | null;
+  Categories?: string | null;
+}
+
+export interface ReportFormCAgeBracket {
+  bracket: string;
+  male: number;
+  female: number;
+  total: number;
+}
+
+export interface ReportFormCSector {
+  sector: string;
+  male: number;
+  female: number;
+  total: number;
+}
+
+export interface ReportFormCGroupedCount {
+  status?: string;
+  citizenship?: string;
+  Sex: string;
+  total: number;
+}
+
+export interface ReportFormCData {
+  ageBrackets: ReportFormCAgeBracket[];
+  sectors: ReportFormCSector[];
+  civilStatus: ReportFormCGroupedCount[];
+  citizenship: ReportFormCGroupedCount[];
+  summary: {
+    totalInhabitants: number;
+    totalHouseholds: number;
+    totalFamilies: number;
+  };
 }
 
 // ==========================================
@@ -300,5 +394,14 @@ export interface ArchivedResident {
   LastName: string;
   Sex: string;
   ResidentStatus: string;
-  DateofDeath?: string;
+  DateofDeath?: string | null;
+}
+
+export interface ResidentHistoryEntry {
+  HistoryID: number;
+  ChangeType: string;
+  ChangeDate: string;
+  PreviousHouseholdID?: number | null;
+  NewHouseholdID?: number | null;
+  changedBy?: string | null;
 }

@@ -25,12 +25,13 @@ import {
 } from "lucide-react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import brgyLogo from "../assets/img/brgy_logo.jpg";
+import { useBarangayLogo } from "../hooks/useBarangayLogo";
 
 const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { logoSrc } = useBarangayLogo();
 
   const menuItems = [
     {
@@ -100,7 +101,7 @@ const Sidebar: React.FC = () => {
       {/* Brand / Logo Area */}
       <Box sx={{ mb: 4 }}>
         <img
-          src={brgyLogo}
+          src={logoSrc}
           alt="Barangay 619 Logo"
           className="w-12 h-12 rounded-full border-2 border-white/20 object-cover"
         />

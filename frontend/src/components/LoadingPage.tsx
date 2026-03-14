@@ -2,11 +2,12 @@ import React, { useEffect } from "react";
 import { Box, Typography } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
-import brgyLogo from "../assets/img/brgy_logo.jpg";
+import { useBarangayLogo } from "../hooks/useBarangayLogo";
 
 const LoadingPage: React.FC = () => {
   const navigate = useNavigate();
   const { isAuthenticated, isLoading } = useAuth();
+  const { logoSrc } = useBarangayLogo();
 
   useEffect(() => {
     // Wait for auth check to complete, then redirect
@@ -37,7 +38,7 @@ const LoadingPage: React.FC = () => {
     >
       <Box sx={{ textAlign: "center", maxWidth: 450, px: 4 }}>
         <img
-          src={brgyLogo}
+          src={logoSrc}
           alt="Barangay Logo"
           style={{
             display: "block",
