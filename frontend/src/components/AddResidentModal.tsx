@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import type { SelectChangeEvent } from "@mui/material";
 import {
   Button,
@@ -48,11 +48,19 @@ export interface HouseholdOption {
   street: string;
 }
 
+export interface FamilyHeadOption {
+  id: string;
+  name: string;
+  householdNumber: string;
+  street: string;
+}
+
 interface AddResidentModalProps {
   open: boolean;
   onClose: () => void;
   onSave?: (data: Record<string, string | string[]>) => void;
   householdOptions?: HouseholdOption[];
+  familyHeadOptions?: FamilyHeadOption[];
   initialHeadId?: string;
 }
 
@@ -74,39 +82,6 @@ const citizenships = [
   "Korean",
   "Spanish",
   "Other",
-];
-
-const familyHeadsList = [
-  {
-    id: "FAM-001",
-    name: "Abad, Carlos",
-    householdNumber: "Household 1",
-    street: "Mahogany St.",
-  },
-  {
-    id: "FAM-002",
-    name: "Bautista, Lica",
-    householdNumber: "Household 2",
-    street: "Narra St.",
-  },
-  {
-    id: "FAM-003",
-    name: "Castalias, Aries",
-    householdNumber: "Household 3",
-    street: "Molave St.",
-  },
-  {
-    id: "FAM-004",
-    name: "Roberto Castalias",
-    householdNumber: "Household 3",
-    street: "Molave St.",
-  },
-  {
-    id: "FAM-005",
-    name: "Miguel Cordero",
-    householdNumber: "Household 4",
-    street: "Ipil-Ipil St.",
-  },
 ];
 
 const familyRoles = [
@@ -188,35 +163,60 @@ const initialFormData = {
   categories: [] as string[],
 };
 
+const isNonEmpty = (value: string): boolean => value.trim().length > 0;
+
+const isValidEmail = (value: string): boolean =>
+  /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+
+const isValidContactNumber = (value: string): boolean =>
+  /^09\d{9}$/.test(value.trim());
+
+const isValidBirthDate = (value: string): boolean => {
+  if (!value) return false;
+
+  const birthDate = new Date(value);
+  if (Number.isNaN(birthDate.getTime())) return false;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  birthDate.setHours(0, 0, 0, 0);
+
+  return birthDate <= today;
+};
+
 const AddResidentModal: React.FC<AddResidentModalProps> = ({
   open,
   onClose,
   onSave,
   householdOptions = [],
+  familyHeadOptions = [],
   initialHeadId,
 }) => {
   const [activeStep, setActiveStep] = useState(0);
   const [formData, setFormData] = useState(initialFormData);
+  const familyHeadsList = useMemo(() => familyHeadOptions, [familyHeadOptions]);
 
   // Sync contextual data if opened from "Add Member" button
   useEffect(() => {
-    if (open) {
-      if (initialHeadId) {
-        const head = familyHeadsList.find((h) => h.id === initialHeadId);
-        setFormData({
-          ...initialFormData,
-          householdRole: "member",
-          householdHeadId: initialHeadId,
-          street: head?.street || "",
-          householdNumber: head?.householdNumber || "",
-        });
-        setActiveStep(0);
-      } else {
-        setFormData(initialFormData);
-        setActiveStep(0);
-      }
+    if (!open) {
+      return;
     }
-  }, [open, initialHeadId]);
+
+    if (initialHeadId) {
+      const head = familyHeadsList.find((h) => h.id === initialHeadId);
+      setFormData({
+        ...initialFormData,
+        householdRole: "member",
+        householdHeadId: initialHeadId,
+        street: head?.street || "",
+        householdNumber: head?.householdNumber || "",
+      });
+      setActiveStep(0);
+    } else {
+      setFormData(initialFormData);
+      setActiveStep(0);
+    }
+  }, [open, familyHeadsList, initialHeadId]);
 
   const steps = [
     { label: "Personal Info", icon: <User size={20} /> },
@@ -272,9 +272,100 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
     });
   };
 
-  const isStepValid = () => true; // Requested clickable
+  const dateOfBirthHasError =
+    formData.dob.length > 0 && !isValidBirthDate(formData.dob);
+  const contactNumberHasError =
+    formData.contactNumber.length > 0 &&
+    !isValidContactNumber(formData.contactNumber);
+  const emailHasError =
+    formData.email.length > 0 && !isValidEmail(formData.email);
+
+  const isStep1Valid = () => {
+    const requiredStep1Fields = [
+      formData.firstName,
+      formData.lastName,
+      formData.sex,
+      formData.dob,
+      formData.placeOfBirth,
+      formData.mothersMaidenNameLast,
+      formData.mothersMaidenNameFirst,
+      formData.mothersMaidenNameMiddle,
+      formData.civilStatus,
+      formData.inhabitantType,
+      formData.citizenship,
+      formData.religion,
+      formData.contactNumber,
+      formData.email,
+    ];
+
+    if (requiredStep1Fields.some((value) => !isNonEmpty(value))) {
+      return false;
+    }
+
+    return (
+      isValidBirthDate(formData.dob) &&
+      isValidContactNumber(formData.contactNumber) &&
+      isValidEmail(formData.email)
+    );
+  };
+
+  const isStep2Valid = () => {
+    const addressFields = initialHeadId
+      ? [formData.street]
+      : [
+          formData.unitRoom,
+          formData.building,
+          formData.lotBlock,
+          formData.street,
+        ];
+
+    if (addressFields.some((value) => !isNonEmpty(value))) {
+      return false;
+    }
+
+    if (formData.householdRole === "head") {
+      return (
+        isNonEmpty(formData.householdNumber) &&
+        isNonEmpty(formData.occupancyStatus)
+      );
+    }
+
+    return (
+      isNonEmpty(formData.householdHeadId) && isNonEmpty(formData.familyRole)
+    );
+  };
+
+  const isStep3Valid = () => {
+    const educationValid =
+      formData.hasEducation === "no" ||
+      (isNonEmpty(formData.educationLevel) &&
+        isNonEmpty(formData.educationStatus));
+
+    const employmentValid =
+      formData.isEmployed === "no" ||
+      (isNonEmpty(formData.occupation) &&
+        isNonEmpty(formData.employmentStatus));
+
+    const voterValid =
+      formData.isVoter === "no" || isNonEmpty(formData.precinctNumber);
+
+    return educationValid && employmentValid && voterValid;
+  };
+
+  const isStepValid = () => {
+    if (activeStep === 0) return isStep1Valid();
+    if (activeStep === 1) return isStep2Valid();
+    if (activeStep === 2) return isStep3Valid();
+    return true;
+  };
+
+  const canSubmit = isStep1Valid() && isStep2Valid() && isStep3Valid();
 
   const handleSubmit = () => {
+    if (!canSubmit) {
+      return;
+    }
+
     if (onSave) {
       onSave(formData);
     }
@@ -379,6 +470,12 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
               name="dob"
               value={formData.dob}
               onChange={handleChange}
+              error={dateOfBirthHasError}
+              helperText={
+                dateOfBirthHasError
+                  ? "Date of birth cannot be in the future."
+                  : undefined
+              }
               InputLabelProps={{ shrink: true }}
             />
           </Grid>
@@ -393,6 +490,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
           </Grid>
           <Grid size={{ xs: 12, md: 3 }}>
             <TextField
+              required
               fullWidth
               label="Place of Birth"
               name="placeOfBirth"
@@ -412,6 +510,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
             <Grid container spacing={3}>
               <Grid size={{ xs: 12, md: 4 }}>
                 <TextField
+                  required
                   fullWidth
                   label="Last Name"
                   name="mothersMaidenNameLast"
@@ -421,6 +520,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <TextField
+                  required
                   fullWidth
                   label="First Name"
                   name="mothersMaidenNameFirst"
@@ -430,12 +530,12 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
               </Grid>
               <Grid size={{ xs: 12, md: 4 }}>
                 <TextField
+                  required
                   fullWidth
                   label="Middle Name"
                   name="mothersMaidenNameMiddle"
                   value={formData.mothersMaidenNameMiddle}
                   onChange={handleChange}
-                  placeholder="Optional"
                 />
               </Grid>
             </Grid>
@@ -458,7 +558,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
         </Typography>
         <Grid container spacing={3}>
           <Grid size={{ xs: 12, md: 4 }}>
-            <FormControl fullWidth>
+            <FormControl fullWidth required>
               <InputLabel>Civil Status</InputLabel>
               <Select
                 name="civilStatus"
@@ -475,7 +575,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
             </FormControl>
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
-            <FormControl fullWidth>
+            <FormControl fullWidth required>
               <InputLabel>Inhabitant Type</InputLabel>
               <Select
                 name="inhabitantType"
@@ -510,6 +610,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <TextField
+              required
               fullWidth
               label="Religion"
               name="religion"
@@ -519,21 +620,33 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <TextField
+              required
               fullWidth
               label="Mobile Number"
               name="contactNumber"
               value={formData.contactNumber}
               onChange={handleChange}
+              error={contactNumberHasError}
+              helperText={
+                contactNumberHasError
+                  ? "Use PH mobile format: 09xxxxxxxxx"
+                  : undefined
+              }
               placeholder="09xxxxxxxxx"
             />
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <TextField
+              required
               fullWidth
               label="Email Address"
               name="email"
               value={formData.email}
               onChange={handleChange}
+              error={emailHasError}
+              helperText={
+                emailHasError ? "Enter a valid email address." : undefined
+              }
               placeholder="name@example.com"
             />
           </Grid>
@@ -584,6 +697,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
             <Grid container spacing={3}>
               <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField
+                  required={!initialHeadId}
                   fullWidth
                   label="Unit/Room No."
                   name="unitRoom"
@@ -594,6 +708,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
               </Grid>
               <Grid size={{ xs: 12, sm: 8 }}>
                 <TextField
+                  required={!initialHeadId}
                   fullWidth
                   label="Building Name"
                   name="building"
@@ -604,6 +719,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
+                  required={!initialHeadId}
                   fullWidth
                   label="Lot/Block/Phase"
                   name="lotBlock"
@@ -683,15 +799,13 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                       textAlign: "center",
                       bgcolor:
                         formData.householdRole === role
-                          ? "primary.light"
+                          ? "#5b21b6"
                           : "transparent",
                       borderColor:
-                        formData.householdRole === role
-                          ? "primary.main"
-                          : "divider",
+                        formData.householdRole === role ? "#5b21b6" : "divider",
                       color:
                         formData.householdRole === role
-                          ? "primary.dark"
+                          ? "#ffffff"
                           : "text.secondary",
                       transition: "all 0.2s",
                       opacity:
@@ -726,7 +840,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
             {formData.householdRole === "head" ? (
               <Grid container spacing={3}>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth required>
                     <InputLabel>Physical Household Number</InputLabel>
                     <Select
                       name="householdNumber"
@@ -766,7 +880,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                   </FormControl>
                 </Grid>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth required>
                     <InputLabel>Occupancy Status</InputLabel>
                     <Select
                       name="occupancyStatus"
@@ -785,7 +899,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
             ) : (
               <Grid container spacing={3}>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth disabled={!!initialHeadId}>
+                  <FormControl fullWidth required disabled={!!initialHeadId}>
                     <InputLabel>Select Family Head</InputLabel>
                     <Select
                       name="householdHeadId"
@@ -805,11 +919,15 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                         }
                       }}
                     >
-                      {familyHeadsList.map((head) => (
-                        <MenuItem key={head.id} value={head.id}>
-                          {head.name} ({head.householdNumber})
-                        </MenuItem>
-                      ))}
+                      {familyHeadsList.length > 0 ? (
+                        familyHeadsList.map((head) => (
+                          <MenuItem key={head.id} value={head.id}>
+                            {head.name} ({head.householdNumber})
+                          </MenuItem>
+                        ))
+                      ) : (
+                        <MenuItem disabled>No family heads available</MenuItem>
+                      )}
                     </Select>
                     {initialHeadId ? (
                       <FormHelperText
@@ -834,7 +952,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                 </Grid>
 
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth>
+                  <FormControl fullWidth required>
                     <InputLabel>Family Role / Relation to Head</InputLabel>
                     <Select
                       name="familyRole"
@@ -924,16 +1042,14 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                     borderRadius: 2,
                     textAlign: "center",
                     bgcolor:
-                      formData.hasEducation === val
-                        ? "primary.light"
-                        : "transparent",
+                      formData.hasEducation === val ? "#5b21b6" : "transparent",
                     borderColor:
-                      formData.hasEducation === val
-                        ? "primary.main"
-                        : "divider",
+                      formData.hasEducation === val ? "#5b21b6" : "divider",
+                    color:
+                      formData.hasEducation === val ? "#ffffff" : "inherit",
                   }}
                 >
-                  <Typography fontWeight="bold">
+                  <Typography fontWeight="bold" color="inherit">
                     {val === "yes" ? "Has Education" : "No Education"}
                   </Typography>
                 </Paper>
@@ -947,6 +1063,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                 <FormControl fullWidth>
                   <InputLabel>Highest Level Attained</InputLabel>
                   <Select
+                    required
                     name="educationLevel"
                     value={formData.educationLevel}
                     label="Highest Level Attained"
@@ -962,6 +1079,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                 <FormControl fullWidth>
                   <InputLabel>Status</InputLabel>
                   <Select
+                    required
                     name="educationStatus"
                     value={formData.educationStatus}
                     label="Status"
@@ -1007,14 +1125,13 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                     borderRadius: 2,
                     textAlign: "center",
                     bgcolor:
-                      formData.isEmployed === val
-                        ? "primary.light"
-                        : "transparent",
+                      formData.isEmployed === val ? "#5b21b6" : "transparent",
                     borderColor:
-                      formData.isEmployed === val ? "primary.main" : "divider",
+                      formData.isEmployed === val ? "#5b21b6" : "divider",
+                    color: formData.isEmployed === val ? "#ffffff" : "inherit",
                   }}
                 >
-                  <Typography fontWeight="bold">
+                  <Typography fontWeight="bold" color="inherit">
                     {val === "yes" ? "Employed" : "Unemployed"}
                   </Typography>
                 </Paper>
@@ -1026,6 +1143,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                 sx={{ display: "flex", flexDirection: "column", gap: 3, pt: 1 }}
               >
                 <TextField
+                  required
                   fullWidth
                   label="Occupation"
                   name="occupation"
@@ -1035,6 +1153,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                 <FormControl fullWidth>
                   <InputLabel>Employment Type</InputLabel>
                   <Select
+                    required
                     name="employmentStatus"
                     value={formData.employmentStatus}
                     label="Employment Type"
@@ -1082,14 +1201,13 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                     borderRadius: 2,
                     textAlign: "center",
                     bgcolor:
-                      formData.isVoter === val
-                        ? "primary.light"
-                        : "transparent",
+                      formData.isVoter === val ? "#5b21b6" : "transparent",
                     borderColor:
-                      formData.isVoter === val ? "primary.main" : "divider",
+                      formData.isVoter === val ? "#5b21b6" : "divider",
+                    color: formData.isVoter === val ? "#ffffff" : "inherit",
                   }}
                 >
-                  <Typography fontWeight="bold">
+                  <Typography fontWeight="bold" color="inherit">
                     {val === "yes" ? "Registered" : "Non-Voter"}
                   </Typography>
                 </Paper>
@@ -1099,6 +1217,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
             <Collapse in={formData.isVoter === "yes"}>
               <Box sx={{ pt: 1 }}>
                 <TextField
+                  required
                   fullWidth
                   label="Precinct Number"
                   name="precinctNumber"
@@ -1472,6 +1591,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                 color="success"
                 size="large"
                 onClick={handleSubmit}
+                disabled={!canSubmit}
                 startIcon={<CheckCircle />}
                 sx={{ px: 4, borderRadius: 2, py: 1.5 }}
               >

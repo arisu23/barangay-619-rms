@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useAuth } from "../hooks/useAuth";
 import {
   Box,
@@ -53,6 +53,7 @@ import { residentService } from "../services/residentService";
 import { householdService } from "../services/householdService";
 import { familyService } from "../services/familyService";
 import { notify } from "../utils/notify";
+import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 import type {
   ResidentListItem,
   HouseholdListItem,
@@ -65,6 +66,7 @@ interface ResidentFormData {
   lastName: string;
   suffix?: string;
   sex: string;
+  dob?: string;
   dateOfBirth?: string;
   birthDate?: string;
   placeOfBirth?: string;
@@ -74,10 +76,18 @@ interface ResidentFormData {
   contactNumber?: string;
   email?: string;
   inhabitantType?: string;
+  mothersMaidenNameLast?: string;
+  mothersMaidenNameFirst?: string;
+  mothersMaidenNameMiddle?: string;
   mothersMaidenSurname?: string;
   mothersMaidenFirstName?: string;
   mothersMaidenMiddleName?: string;
   householdId?: string | number;
+  householdNumber?: string;
+  unitRoom?: string;
+  building?: string;
+  lotBlock?: string;
+  city?: string;
   unitRoomFloor?: string;
   buildingName?: string;
   lotBlockPhase?: string;
@@ -119,8 +129,10 @@ const ResidentRecords: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [page, setPage] = useState(1);
+  const [mainSortOrder, setMainSortOrder] = useState<SortOrder>("desc");
   const rowsPerPage = 10;
   const [familyPage, setFamilyPage] = useState(1);
+  const [familySortOrder, setFamilySortOrder] = useState<SortOrder>("asc");
   const familyRowsPerPage = 10;
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -225,13 +237,28 @@ const ResidentRecords: React.FC = () => {
   ) => {
     const data = rawData as unknown as ResidentFormData;
     try {
+      const selectedHouseholdId = (() => {
+        if (data.householdId !== undefined && data.householdId !== "") {
+          const parsed = Number(data.householdId);
+          return Number.isFinite(parsed) ? parsed : undefined;
+        }
+
+        if (data.householdNumber) {
+          return households.find(
+            (household) => household.householdNumber === data.householdNumber,
+          )?.HouseholdID;
+        }
+
+        return undefined;
+      })();
+
       const payload = {
         firstName: data.firstName,
         middleName: data.middleName || "",
         lastName: data.lastName,
         suffix: data.suffix || "",
         sex: data.sex,
-        dateOfBirth: data.dateOfBirth || data.birthDate || "",
+        dateOfBirth: data.dateOfBirth || data.birthDate || data.dob || "",
         placeOfBirth: data.placeOfBirth || "",
         civilStatus: data.civilStatus || "",
         citizenship: data.citizenship || "",
@@ -239,18 +266,21 @@ const ResidentRecords: React.FC = () => {
         contactNumber: data.contactNumber || "",
         email: data.email || "",
         inhabitantType: data.inhabitantType || "Resident",
-        mothersMaidenSurname: data.mothersMaidenSurname || "",
-        mothersMaidenFirstName: data.mothersMaidenFirstName || "",
-        mothersMaidenMiddleName: data.mothersMaidenMiddleName || "",
-        householdId: data.householdId ? Number(data.householdId) : undefined,
+        mothersMaidenSurname:
+          data.mothersMaidenSurname || data.mothersMaidenNameLast || "",
+        mothersMaidenFirstName:
+          data.mothersMaidenFirstName || data.mothersMaidenNameFirst || "",
+        mothersMaidenMiddleName:
+          data.mothersMaidenMiddleName || data.mothersMaidenNameMiddle || "",
+        householdId: selectedHouseholdId,
         address: {
-          unitRoomFloor: data.unitRoomFloor || "",
-          buildingName: data.buildingName || "",
-          lotBlockPhase: data.lotBlockPhase || "",
-          houseNumber: data.houseNumber || "",
+          unitRoomFloor: data.unitRoomFloor || data.unitRoom || "",
+          buildingName: data.buildingName || data.building || "",
+          lotBlockPhase: data.lotBlockPhase || data.lotBlock || "",
+          houseNumber: data.houseNumber || data.householdNumber || "",
           street: data.street || "",
           barangay: data.barangay || "Barangay 619",
-          municipality: data.municipality || "Manila",
+          municipality: data.municipality || data.city || "Manila",
         },
       };
 
@@ -394,17 +424,40 @@ const ResidentRecords: React.FC = () => {
     activeTab === 0 ? residentTotalPages : householdTotalPages;
 
   useEffect(() => {
+    setPage(1);
+  }, [activeTab, mainSortOrder]);
+
+  useEffect(() => {
     if (page > currentTotalPages) {
       setPage(currentTotalPages);
     }
   }, [page, currentTotalPages]);
 
-  const paginatedResidents = filteredResidents.slice(
+  const sortedResidents = [...filteredResidents].sort((a, b) =>
+    mainSortOrder === "asc"
+      ? a.ResidentID - b.ResidentID
+      : b.ResidentID - a.ResidentID,
+  );
+
+  const sortedHouseholds = [...filteredHouseholds].sort((a, b) => {
+    const compare = a.householdNumber.localeCompare(
+      b.householdNumber,
+      undefined,
+      {
+        numeric: true,
+        sensitivity: "base",
+      },
+    );
+
+    return mainSortOrder === "asc" ? compare : -compare;
+  });
+
+  const paginatedResidents = sortedResidents.slice(
     (page - 1) * rowsPerPage,
     page * rowsPerPage,
   );
 
-  const paginatedHouseholds = filteredHouseholds.slice(
+  const paginatedHouseholds = sortedHouseholds.slice(
     (page - 1) * rowsPerPage,
     page * rowsPerPage,
   );
@@ -415,15 +468,67 @@ const ResidentRecords: React.FC = () => {
   );
 
   useEffect(() => {
+    setFamilyPage(1);
+  }, [familySortOrder]);
+
+  useEffect(() => {
     if (familyPage > familyTotalPages) {
       setFamilyPage(familyTotalPages);
     }
   }, [familyPage, familyTotalPages]);
 
-  const paginatedFamilyRecords = familyRecords.slice(
+  const sortedFamilyRecords = [...familyRecords].sort((a, b) => {
+    const compareName = `${a.LastName} ${a.FirstName}`.localeCompare(
+      `${b.LastName} ${b.FirstName}`,
+      undefined,
+      { sensitivity: "base" },
+    );
+
+    if (compareName !== 0) {
+      return familySortOrder === "asc" ? compareName : -compareName;
+    }
+
+    const dateA = new Date(a.DateOfBirth).getTime();
+    const dateB = new Date(b.DateOfBirth).getTime();
+    return familySortOrder === "asc" ? dateA - dateB : dateB - dateA;
+  });
+
+  const paginatedFamilyRecords = sortedFamilyRecords.slice(
     (familyPage - 1) * familyRowsPerPage,
     familyPage * familyRowsPerPage,
   );
+
+  const familyHeadOptions = useMemo(() => {
+    const householdMap = new Map(
+      households.map((household) => [
+        household.HouseholdID,
+        {
+          number: household.householdNumber,
+          street: household.Street_Alley_Zone,
+        },
+      ]),
+    );
+
+    return residents
+      .filter(
+        (resident) =>
+          resident.ResidentStatus === "Active" &&
+          typeof resident.HouseholdID === "number",
+      )
+      .map((resident) => {
+        const household =
+          typeof resident.HouseholdID === "number"
+            ? householdMap.get(resident.HouseholdID)
+            : undefined;
+
+        return {
+          id: String(resident.ResidentID),
+          name: `${resident.LastName}, ${resident.FirstName}`,
+          householdNumber: household?.number ?? "Unassigned",
+          street: household?.street ?? "",
+        };
+      });
+  }, [households, residents]);
 
   return (
     <Box
@@ -630,25 +735,37 @@ const ResidentRecords: React.FC = () => {
           className="custom-scrollbar"
         >
           {activeTab === 0 ? (
-            <Table stickyHeader>
+            <Table stickyHeader sx={{ tableLayout: "fixed", minWidth: 1020 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "9%" }}
+                  >
                     ID
                   </TableCell>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "26%" }}
+                  >
                     FULL NAME
                   </TableCell>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "8%" }}
+                  >
                     AGE
                   </TableCell>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "10%" }}
+                  >
                     GENDER
                   </TableCell>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "12%" }}
+                  >
                     STATUS
                   </TableCell>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "17%" }}
+                  >
                     CATEGORIES
                   </TableCell>
                   <TableCell
@@ -656,6 +773,7 @@ const ResidentRecords: React.FC = () => {
                       bgcolor: "#f8fafc",
                       fontWeight: 800,
                       textAlign: "center",
+                      width: "18%",
                     }}
                   >
                     ACTIONS
@@ -747,16 +865,22 @@ const ResidentRecords: React.FC = () => {
               </TableBody>
             </Table>
           ) : (
-            <Table stickyHeader>
+            <Table stickyHeader sx={{ tableLayout: "fixed", minWidth: 820 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "24%" }}
+                  >
                     HOUSEHOLD NO.
                   </TableCell>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "34%" }}
+                  >
                     STREET
                   </TableCell>
-                  <TableCell sx={{ bgcolor: "#f8fafc", fontWeight: 800 }}>
+                  <TableCell
+                    sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "18%" }}
+                  >
                     FAMILIES
                   </TableCell>
                   <TableCell
@@ -764,6 +888,7 @@ const ResidentRecords: React.FC = () => {
                       bgcolor: "#f8fafc",
                       fontWeight: 800,
                       textAlign: "center",
+                      width: "24%",
                     }}
                   >
                     ACTIONS
@@ -825,9 +950,19 @@ const ResidentRecords: React.FC = () => {
             borderTop: "1px solid #e5e7eb",
             bgcolor: "white",
             display: "flex",
-            justifyContent: "center",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
           }}
         >
+          <SortOrderToggle
+            order={mainSortOrder}
+            onToggle={() =>
+              setMainSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+            }
+            label="Sort"
+          />
           <Pagination
             count={currentTotalPages}
             color="primary"
@@ -848,6 +983,7 @@ const ResidentRecords: React.FC = () => {
           number: h.householdNumber,
           street: h.Street_Alley_Zone,
         }))}
+        familyHeadOptions={familyHeadOptions}
       />
       <ResidentProfileModal
         open={isResidentProfileOpen}
@@ -1067,21 +1203,27 @@ const ResidentRecords: React.FC = () => {
         </DialogTitle>
         <DialogContent sx={{ p: 0 }}>
           <TableContainer sx={{ maxHeight: "60vh" }}>
-            <Table stickyHeader>
+            <Table stickyHeader sx={{ tableLayout: "fixed", minWidth: 760 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 800, bgcolor: "#f8fafc" }}>
+                  <TableCell
+                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "38%" }}
+                  >
                     NAME
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 800, bgcolor: "#f8fafc" }}>
+                  <TableCell
+                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "22%" }}
+                  >
                     ROLE
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 800, bgcolor: "#f8fafc" }}>
+                  <TableCell
+                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "14%" }}
+                  >
                     AGE
                   </TableCell>
                   <TableCell
                     align="center"
-                    sx={{ fontWeight: 800, bgcolor: "#f8fafc" }}
+                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "26%" }}
                   >
                     ACTIONS
                   </TableCell>
@@ -1165,11 +1307,21 @@ const ResidentRecords: React.FC = () => {
           <Box
             sx={{
               display: "flex",
-              justifyContent: "center",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: 2,
+              flexWrap: "wrap",
               p: 2,
               borderTop: "1px solid #f3f4f6",
             }}
           >
+            <SortOrderToggle
+              order={familySortOrder}
+              onToggle={() =>
+                setFamilySortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+              }
+              label="Sort"
+            />
             <Pagination
               count={familyTotalPages}
               color="primary"

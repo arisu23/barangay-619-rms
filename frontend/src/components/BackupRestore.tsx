@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { backupService } from "../services/backupService";
 import { notify } from "../utils/notify";
+import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 import type { BackupLog as BackupApiLog } from "../types";
 
 interface BackupLogRow {
@@ -44,6 +45,7 @@ interface BackupLogRow {
   backupId: number;
   fileName: string;
   dateTime: string;
+  timestampMs: number;
   status: "Successful" | "Failed" | "Pending";
   filePath: string;
   type: "Backup" | "Restore";
@@ -54,55 +56,18 @@ const mapBackupLogToRow = (log: BackupApiLog): BackupLogRow => ({
   backupId: log.BackupID,
   fileName: log.FileName,
   dateTime: new Date(log.DateCreated).toLocaleString(),
+  timestampMs: new Date(log.DateCreated).getTime(),
   status: log.BackupStatus,
   filePath: log.FilePath,
   type: log.BackupType as "Backup" | "Restore",
 });
 
-const mockBackupLogs: BackupLogRow[] = [
-  {
-    id: "1",
-    backupId: 1,
-    fileName: "BRMS_FULL_20251101.bak",
-    dateTime: "2025-11-01 08:30 AM",
-    status: "Successful",
-    filePath: "E:/Backups/BRMS/",
-    type: "Backup",
-  },
-  {
-    id: "2",
-    backupId: 2,
-    fileName: "BRMS_SYSTEM_20251105.bak",
-    dateTime: "2025-11-05 02:15 PM",
-    status: "Successful",
-    filePath: "D:/ExternalDrive/BRMS/",
-    type: "Backup",
-  },
-  {
-    id: "3",
-    backupId: 3,
-    fileName: "BRMS_FULL_20251110.bak",
-    dateTime: "2025-11-10 11:00 AM",
-    status: "Failed",
-    filePath: "E:/Backups/BRMS/",
-    type: "Restore",
-  },
-  {
-    id: "4",
-    backupId: 4,
-    fileName: "BRMS_MANUAL_20251115.bak",
-    dateTime: "2025-11-15 04:45 PM",
-    status: "Successful",
-    filePath: "F:/BRMS_Recovery/",
-    type: "Backup",
-  },
-];
-
 const BackupRestore: React.FC = () => {
-  const [logs, setLogs] = useState<BackupLogRow[]>(mockBackupLogs);
+  const [logs, setLogs] = useState<BackupLogRow[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [page, setPage] = useState(1);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const rowsPerPage = 10;
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
@@ -234,7 +199,7 @@ const BackupRestore: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, sortOrder]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -242,7 +207,19 @@ const BackupRestore: React.FC = () => {
     }
   }, [page, totalPages]);
 
-  const paginatedLogs = filteredLogs.slice(
+  const sortedLogs = [...filteredLogs].sort((a, b) => {
+    if (a.timestampMs === b.timestampMs) {
+      return sortOrder === "asc"
+        ? a.backupId - b.backupId
+        : b.backupId - a.backupId;
+    }
+
+    return sortOrder === "asc"
+      ? a.timestampMs - b.timestampMs
+      : b.timestampMs - a.timestampMs;
+  });
+
+  const paginatedLogs = sortedLogs.slice(
     (page - 1) * rowsPerPage,
     page * rowsPerPage,
   );
@@ -493,21 +470,36 @@ const BackupRestore: React.FC = () => {
         </Box>
 
         <TableContainer>
-          <Table>
+          <Table sx={{ tableLayout: "fixed", minWidth: 980 }}>
             <TableHead>
               <TableRow sx={{ bgcolor: "#f1f5f9" }}>
-                <TableCell sx={{ fontWeight: 700, borderRadius: "12px 0 0 0" }}>
+                <TableCell
+                  sx={{
+                    fontWeight: 700,
+                    borderRadius: "12px 0 0 0",
+                    width: "23%",
+                  }}
+                >
                   File Name
                 </TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Date & Time</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Type</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
-                <TableCell sx={{ fontWeight: 700 }}>Storage Path</TableCell>
+                <TableCell sx={{ fontWeight: 700, width: "20%" }}>
+                  Date & Time
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, width: "12%" }}>
+                  Type
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, width: "13%" }}>
+                  Status
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, width: "22%" }}>
+                  Storage Path
+                </TableCell>
                 <TableCell
                   sx={{
                     fontWeight: 700,
                     borderRadius: "0 12px 0 0",
                     textAlign: "center",
+                    width: "10%",
                   }}
                 >
                   Actions
@@ -599,11 +591,21 @@ const BackupRestore: React.FC = () => {
         <Box
           sx={{
             display: "flex",
-            justifyContent: "center",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
             p: 2,
             borderTop: "1px solid #f1f5f9",
           }}
         >
+          <SortOrderToggle
+            order={sortOrder}
+            onToggle={() =>
+              setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+            }
+            label="Sort"
+          />
           <Pagination
             count={totalPages}
             color="primary"

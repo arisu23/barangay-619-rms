@@ -18,29 +18,195 @@ import {
   FormControl,
   InputAdornment,
   Pagination,
+  Chip,
 } from "@mui/material";
 import { Calendar, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { auditService } from "../services/auditService";
 import { notify } from "../utils/notify";
 import type { AuditLog } from "../types";
+import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 
 interface AuditLogRow {
   id: number;
   user: string;
   date: string;
   timestamp: string;
+  timestampMs: number;
   action: string;
+  actionLabel: string;
+  tone: "blue" | "green" | "red" | "neutral";
   oldRecord: string;
   newRecord: string;
+  oldRecordText: string;
+  newRecordText: string;
 }
+
+const toSentenceCase = (value: string): string => {
+  if (!value.trim()) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+};
+
+const formatRoleValue = (value: unknown): unknown => {
+  if (typeof value !== "string") return value;
+  const lower = value.trim().toLowerCase();
+  if (lower === "admin" || lower === "staff") {
+    return toSentenceCase(lower);
+  }
+  return value;
+};
+
+const normalizeAuditPayload = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeAuditPayload(item));
+  }
+
+  if (value && typeof value === "object") {
+    const normalizedEntries = Object.entries(
+      value as Record<string, unknown>,
+    ).map(([key, nestedValue]) => {
+      const normalizedNestedValue = normalizeAuditPayload(nestedValue);
+      const shouldFormatRole = key.toLowerCase().includes("role");
+      return [
+        key,
+        shouldFormatRole
+          ? formatRoleValue(normalizedNestedValue)
+          : normalizedNestedValue,
+      ];
+    });
+
+    return Object.fromEntries(normalizedEntries);
+  }
+
+  return formatRoleValue(value);
+};
+
+const parseAuditPayload = (value?: string): unknown => {
+  if (!value) return undefined;
+  try {
+    return normalizeAuditPayload(JSON.parse(value));
+  } catch {
+    return normalizeAuditPayload(value);
+  }
+};
+
+const prettifyKey = (key: string): string => {
+  return key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => toSentenceCase(part))
+    .join(" ");
+};
+
+const stringifyAuditValue = (value: unknown): string => {
+  if (value === null || value === undefined) return "-";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyAuditValue(item)).join(", ");
+  }
+  if (typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>);
+    if (!entries.length) return "-";
+    return entries
+      .map(([key, nestedValue]) => {
+        const rendered = stringifyAuditValue(nestedValue);
+        return `${prettifyKey(key)}: ${rendered}`;
+      })
+      .join(" | ");
+  }
+  return String(value);
+};
+
+const getActionTone = (
+  action: string,
+): "blue" | "green" | "red" | "neutral" => {
+  if (/(LOGOUT|FAILED|DEACTIVATE|ARCHIVE|DELETE)/.test(action)) {
+    return "red";
+  }
+  if (/(UPDATE|CHANGE|EDIT)/.test(action)) {
+    return "blue";
+  }
+  if (/(LOGIN|CREATE|ADD|ASSIGN|RESTORE|ACTIVATE|BACKUP)/.test(action)) {
+    return "green";
+  }
+  return "neutral";
+};
+
+const actionLabelMap: Record<string, string> = {
+  USER_LOGIN: "User Logged In",
+  USER_LOGOUT: "User Logged Out",
+  UPDATE_BARANGAY_INFO: "Updated Barangay Info",
+};
+
+const getActionLabel = (action: string): string => {
+  if (actionLabelMap[action]) return actionLabelMap[action];
+  return action
+    .toLowerCase()
+    .split("_")
+    .map((part) => toSentenceCase(part))
+    .join(" ");
+};
+
+const formatAuditRecordText = (
+  action: string,
+  rawValue: string | undefined,
+  kind: "old" | "new",
+): string => {
+  if (!rawValue) {
+    return kind === "old" ? "No previous value." : "No additional details.";
+  }
+
+  const parsed = parseAuditPayload(rawValue);
+  const details = stringifyAuditValue(parsed);
+
+  if (/(UPDATE|CHANGE|EDIT)/.test(action)) {
+    return kind === "old" ? `Before: ${details}` : `After: ${details}`;
+  }
+
+  if (/USER_LOGIN/.test(action)) {
+    return `${details}`;
+  }
+
+  if (/USER_LOGOUT/.test(action)) {
+    return `${details}`;
+  }
+
+  return `Details: ${details}`;
+};
+
+const getToneStyles = (tone: "blue" | "green" | "red" | "neutral") => {
+  switch (tone) {
+    case "blue":
+      return { text: "#1d4ed8", bg: "#eff6ff" };
+    case "green":
+      return { text: "#166534", bg: "#dcfce7" };
+    case "red":
+      return { text: "#991b1b", bg: "#fee2e2" };
+    default:
+      return { text: "#475569", bg: "#f1f5f9" };
+  }
+};
+
+const formatUserCell = (
+  username: string | undefined,
+  userId: number,
+): string => {
+  if (!username) return `User ${userId}`;
+  return toSentenceCase(username);
+};
 
 const mapAuditLogToRow = (log: AuditLog): AuditLogRow => {
   const parsedDate = new Date(log.Timestamp);
   const isValidDate = !Number.isNaN(parsedDate.getTime());
+  const tone = getActionTone(log.Action);
 
   return {
     id: log.LogID,
-    user: log.Username || `User ${log.UserID}`,
+    user: formatUserCell(log.Username, log.UserID),
     date: isValidDate ? parsedDate.toLocaleDateString("en-CA") : "-",
     timestamp: isValidDate
       ? parsedDate.toLocaleTimeString([], {
@@ -48,9 +214,14 @@ const mapAuditLogToRow = (log: AuditLog): AuditLogRow => {
           minute: "2-digit",
         })
       : String(log.Timestamp || "-"),
+    timestampMs: isValidDate ? parsedDate.getTime() : 0,
     action: log.Action,
+    actionLabel: getActionLabel(log.Action),
+    tone,
     oldRecord: log.OldValue || "-",
     newRecord: log.NewValue || "-",
+    oldRecordText: formatAuditRecordText(log.Action, log.OldValue, "old"),
+    newRecordText: formatAuditRecordText(log.Action, log.NewValue, "new"),
   };
 };
 
@@ -336,6 +507,7 @@ const AuditTrail: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | null>(null);
   const [page, setPage] = useState(1);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const rowsPerPage = 10;
 
   // Date Range State (Date objects)
@@ -427,9 +599,19 @@ const AuditTrail: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [userFilter, searchQuery, startDate, endDate]);
+  }, [userFilter, searchQuery, startDate, endDate, sortOrder]);
 
-  const paginatedLogs = filteredLogs.slice(
+  const sortedLogs = useMemo(() => {
+    const sorted = [...filteredLogs];
+    sorted.sort((a, b) =>
+      sortOrder === "asc"
+        ? a.timestampMs - b.timestampMs
+        : b.timestampMs - a.timestampMs,
+    );
+    return sorted;
+  }, [filteredLogs, sortOrder]);
+
+  const paginatedLogs = sortedLogs.slice(
     (page - 1) * rowsPerPage,
     page * rowsPerPage,
   );
@@ -626,7 +808,7 @@ const AuditTrail: React.FC = () => {
           sx={{ flex: 1, overflow: "auto" }}
           className="custom-scrollbar"
         >
-          <Table stickyHeader>
+          <Table stickyHeader sx={{ tableLayout: "fixed", minWidth: 1100 }}>
             <TableHead>
               <TableRow>
                 <TableCell
@@ -634,6 +816,7 @@ const AuditTrail: React.FC = () => {
                     backgroundColor: "#f3f4f6",
                     fontWeight: "bold",
                     color: "#374151",
+                    width: "8%",
                   }}
                 >
                   Id
@@ -643,6 +826,7 @@ const AuditTrail: React.FC = () => {
                     backgroundColor: "#f3f4f6",
                     fontWeight: "bold",
                     color: "#374151",
+                    width: "12%",
                   }}
                 >
                   User
@@ -652,6 +836,7 @@ const AuditTrail: React.FC = () => {
                     backgroundColor: "#f3f4f6",
                     fontWeight: "bold",
                     color: "#374151",
+                    width: "10%",
                   }}
                 >
                   Date
@@ -661,6 +846,7 @@ const AuditTrail: React.FC = () => {
                     backgroundColor: "#f3f4f6",
                     fontWeight: "bold",
                     color: "#374151",
+                    width: "10%",
                   }}
                 >
                   Timestamp
@@ -670,6 +856,7 @@ const AuditTrail: React.FC = () => {
                     backgroundColor: "#f3f4f6",
                     fontWeight: "bold",
                     color: "#374151",
+                    width: "18%",
                   }}
                 >
                   Action
@@ -679,6 +866,7 @@ const AuditTrail: React.FC = () => {
                     backgroundColor: "#f3f4f6",
                     fontWeight: "bold",
                     color: "#374151",
+                    width: "21%",
                   }}
                 >
                   Old Record
@@ -688,6 +876,7 @@ const AuditTrail: React.FC = () => {
                     backgroundColor: "#f3f4f6",
                     fontWeight: "bold",
                     color: "#374151",
+                    width: "21%",
                   }}
                 >
                   New Record
@@ -715,12 +904,50 @@ const AuditTrail: React.FC = () => {
                 paginatedLogs.map((log) => (
                   <TableRow key={log.id} hover>
                     <TableCell>{log.id}</TableCell>
-                    <TableCell>{log.user}</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>{log.user}</TableCell>
                     <TableCell>{log.date}</TableCell>
                     <TableCell>{log.timestamp}</TableCell>
-                    <TableCell>{log.action}</TableCell>
-                    <TableCell>{log.oldRecord}</TableCell>
-                    <TableCell>{log.newRecord}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={log.actionLabel}
+                        size="small"
+                        sx={{
+                          fontWeight: 700,
+                          bgcolor: getToneStyles(log.tone).bg,
+                          color: getToneStyles(log.tone).text,
+                        }}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color:
+                            log.oldRecord === "-"
+                              ? "#64748b"
+                              : getToneStyles(log.tone).text,
+                          whiteSpace: "normal",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {log.oldRecordText}
+                      </Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        sx={{
+                          color:
+                            log.newRecord === "-"
+                              ? "#64748b"
+                              : getToneStyles(log.tone).text,
+                          whiteSpace: "normal",
+                          wordBreak: "break-word",
+                        }}
+                      >
+                        {log.newRecordText}
+                      </Typography>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -732,13 +959,23 @@ const AuditTrail: React.FC = () => {
         <Box
           sx={{
             display: "flex",
-            justifyContent: "center",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
             p: 2,
             borderTop: "1px solid #f3f4f6",
           }}
         >
+          <SortOrderToggle
+            order={sortOrder}
+            onToggle={() =>
+              setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+            }
+            label="Sort"
+          />
           <Pagination
-            count={Math.max(1, Math.ceil(filteredLogs.length / rowsPerPage))}
+            count={Math.max(1, Math.ceil(sortedLogs.length / rowsPerPage))}
             color="primary"
             shape="rounded"
             page={page}

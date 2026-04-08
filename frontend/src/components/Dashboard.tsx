@@ -12,6 +12,7 @@ import StatCard from "./StatCard";
 import OfficialsList from "./OfficialsList";
 import type { StatData, ChartData, DashboardStats } from "../types";
 import { dashboardService } from "../services/dashboardService";
+import { notify } from "../utils/notify";
 
 // Reusable Component for Resident Logs with Button Toggle
 interface ResidentLogCardProps {
@@ -83,14 +84,16 @@ const Dashboard: React.FC = () => {
       try {
         const result = await dashboardService.getStats();
         setData(result);
-      } catch {
-        // If API fails, the mock defaults below will stay visible
+      } catch (error: unknown) {
+        notify.error("Failed to load dashboard statistics.");
+        console.error("Dashboard stats fetch failed:", error);
+        setData(null);
       }
     };
     fetchDashboard();
   }, []);
 
-  // Data from API, with mock defaults as fallback
+  // Data from API, with zero-value fallback
   const stats: StatData[] = [
     {
       id: "1",

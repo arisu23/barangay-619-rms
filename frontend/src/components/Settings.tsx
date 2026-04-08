@@ -67,6 +67,7 @@ import {
 import { barangayInfoService } from "../services/barangayInfoService";
 import { notify } from "../utils/notify";
 import { useBarangayLogo } from "../hooks/useBarangayLogo";
+import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 import type { ResidentListItem } from "../types";
 
 interface BarangayInfoForm {
@@ -161,6 +162,10 @@ const getApiErrorMessage = (error: unknown, fallback: string) => {
   return message || fallback;
 };
 
+const normalizeRoleLabel = (role: string): "Admin" | "Staff" => {
+  return role.toLowerCase() === "admin" ? "Admin" : "Staff";
+};
+
 const mapOfficialApiToUi = (official: OfficialApi): Official => ({
   id: official.OfficialID,
   residentId: official.ResidentID,
@@ -178,7 +183,7 @@ const mapUserApiToUi = (user: UserAccountApi): UserAccount => ({
   id: user.UserID,
   name: user.Username,
   username: user.Username,
-  role: user.Role,
+  role: normalizeRoleLabel(user.Role),
   status: user.AccStatus,
   lastLogin: "Never",
 });
@@ -210,6 +215,9 @@ const Settings: React.FC = () => {
   const [isUsersSubmitting, setIsUsersSubmitting] = useState(false);
   const [officialsPage, setOfficialsPage] = useState(1);
   const [usersPage, setUsersPage] = useState(1);
+  const [officialsSortOrder, setOfficialsSortOrder] =
+    useState<SortOrder>("asc");
+  const [usersSortOrder, setUsersSortOrder] = useState<SortOrder>("asc");
   const officialsRowsPerPage = 10;
   const usersRowsPerPage = 10;
 
@@ -639,7 +647,14 @@ const Settings: React.FC = () => {
     1,
     Math.ceil(officials.length / officialsRowsPerPage),
   );
-  const paginatedOfficials = officials.slice(
+  const sortedOfficials = [...officials].sort((a, b) => {
+    const compare = a.name.localeCompare(b.name, undefined, {
+      sensitivity: "base",
+    });
+    return officialsSortOrder === "asc" ? compare : -compare;
+  });
+
+  const paginatedOfficials = sortedOfficials.slice(
     (officialsPage - 1) * officialsRowsPerPage,
     officialsPage * officialsRowsPerPage,
   );
@@ -648,10 +663,25 @@ const Settings: React.FC = () => {
     1,
     Math.ceil(filteredUsers.length / usersRowsPerPage),
   );
-  const paginatedUsers = filteredUsers.slice(
+  const sortedUsers = [...filteredUsers].sort((a, b) => {
+    const compare = a.name.localeCompare(b.name, undefined, {
+      sensitivity: "base",
+    });
+    return usersSortOrder === "asc" ? compare : -compare;
+  });
+
+  const paginatedUsers = sortedUsers.slice(
     (usersPage - 1) * usersRowsPerPage,
     usersPage * usersRowsPerPage,
   );
+
+  useEffect(() => {
+    setOfficialsPage(1);
+  }, [officialsSortOrder]);
+
+  useEffect(() => {
+    setUsersPage(1);
+  }, [usersSortOrder]);
 
   useEffect(() => {
     if (officialsPage > officialsTotalPages) {
@@ -1294,15 +1324,21 @@ const Settings: React.FC = () => {
               variant="outlined"
               sx={{ borderRadius: 2 }}
             >
-              <Table>
+              <Table sx={{ tableLayout: "fixed", minWidth: 880 }}>
                 <TableHead sx={{ bgcolor: "#f8fafc" }}>
                   <TableRow>
                     <TableCell sx={{ fontWeight: "bold", width: "80px" }}>
                       Photo
                     </TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Name</TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Position</TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Term</TableCell>
+                    <TableCell sx={{ fontWeight: "bold", width: "32%" }}>
+                      Name
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: "bold", width: "28%" }}>
+                      Position
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: "bold", width: "28%" }}>
+                      Term
+                    </TableCell>
                     <TableCell
                       align="center"
                       sx={{ fontWeight: "bold", width: "100px" }}
@@ -1371,7 +1407,25 @@ const Settings: React.FC = () => {
               </Table>
             </TableContainer>
 
-            <Box sx={{ display: "flex", justifyContent: "center", pt: 2 }}>
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 2,
+                flexWrap: "wrap",
+                pt: 2,
+              }}
+            >
+              <SortOrderToggle
+                order={officialsSortOrder}
+                onToggle={() =>
+                  setOfficialsSortOrder((prev) =>
+                    prev === "asc" ? "desc" : "asc",
+                  )
+                }
+                label="Sort"
+              />
               <Pagination
                 count={officialsTotalPages}
                 color="primary"
@@ -1521,21 +1575,27 @@ const Settings: React.FC = () => {
               variant="outlined"
               sx={{ borderRadius: 2 }}
             >
-              <Table>
+              <Table sx={{ tableLayout: "fixed", minWidth: 980 }}>
                 <TableHead sx={{ bgcolor: "#f8fafc" }}>
                   <TableRow>
-                    <TableCell sx={{ fontWeight: "bold" }}>
+                    <TableCell sx={{ fontWeight: "bold", width: "24%" }}>
                       User Profile
                     </TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Username</TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Role</TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>Status</TableCell>
-                    <TableCell sx={{ fontWeight: "bold" }}>
+                    <TableCell sx={{ fontWeight: "bold", width: "20%" }}>
+                      Username
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: "bold", width: "12%" }}>
+                      Role
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: "bold", width: "12%" }}>
+                      Status
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: "bold", width: "20%" }}>
                       Last Login
                     </TableCell>
                     <TableCell
                       align="center"
-                      sx={{ fontWeight: "bold", width: "120px" }}
+                      sx={{ fontWeight: "bold", width: "12%" }}
                     >
                       Actions
                     </TableCell>
@@ -1588,14 +1648,18 @@ const Settings: React.FC = () => {
                         <TableCell>
                           <Chip
                             icon={<ShieldCheck size={14} />}
-                            label={user.role}
+                            label={normalizeRoleLabel(user.role)}
                             size="small"
                             sx={{
                               fontWeight: "bold",
                               bgcolor:
-                                user.role === "Admin" ? "#f5f3ff" : "#eff6ff",
+                                normalizeRoleLabel(user.role) === "Admin"
+                                  ? "#f5f3ff"
+                                  : "#eff6ff",
                               color:
-                                user.role === "Admin" ? "#6d28d9" : "#1d4ed8",
+                                normalizeRoleLabel(user.role) === "Admin"
+                                  ? "#6d28d9"
+                                  : "#1d4ed8",
                             }}
                           />
                         </TableCell>
@@ -1695,7 +1759,23 @@ const Settings: React.FC = () => {
               </Table>
             </TableContainer>
 
-            <Box sx={{ display: "flex", justifyContent: "center", pt: 2 }}>
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 2,
+                flexWrap: "wrap",
+                pt: 2,
+              }}
+            >
+              <SortOrderToggle
+                order={usersSortOrder}
+                onToggle={() =>
+                  setUsersSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+                }
+                label="Sort"
+              />
               <Pagination
                 count={usersTotalPages}
                 color="primary"

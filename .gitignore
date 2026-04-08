@@ -67,3 +67,7 @@ task-status.md
 
 #Github copilot files
 .github
+
+qa
+playwright.config.ts
+e2e

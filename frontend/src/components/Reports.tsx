@@ -71,6 +71,7 @@ import {
 import type { TransitionProps } from "@mui/material/transitions";
 import { reportService } from "../services/reportService";
 import { notify } from "../utils/notify";
+import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 import type {
   ReportDemographicsSummary,
   ReportDemographicsResident,
@@ -144,137 +145,6 @@ const toResidentRecord = (
   };
 };
 
-// --- Mock Data ---
-// Extended mock data for the detailed demographics breakdown
-const residentsData = [
-  {
-    id: 1,
-    lastName: "Abad",
-    firstName: "Carlos",
-    middleName: "Santos",
-    ext: "",
-    pob: "Manila",
-    dob: "2001-05-15",
-    age: 23,
-    sex: "Male",
-    civilStatus: "Single",
-    citizenship: "Filipino",
-    occupation: "Engineer",
-    sector: "Labor Force",
-    household: "HH-001",
-    street: "Mahogany St.",
-    categories: ["OFW"],
-  },
-  {
-    id: 2,
-    lastName: "Bautista",
-    firstName: "Lica",
-    middleName: "Marie",
-    ext: "",
-    pob: "QC",
-    dob: "1988-12-02",
-    age: 37,
-    sex: "Female",
-    civilStatus: "Married",
-    citizenship: "Filipino",
-    occupation: "Teacher",
-    sector: "Solo Parent",
-    household: "HH-002",
-    street: "Narra St.",
-    categories: ["Solo Parent", "4Ps"],
-  },
-  {
-    id: 3,
-    lastName: "Castalias",
-    firstName: "Aries",
-    middleName: "P",
-    ext: "",
-    pob: "Cebu",
-    dob: "1979-03-24",
-    age: 45,
-    sex: "Male",
-    civilStatus: "Single",
-    citizenship: "Filipino",
-    occupation: "Driver",
-    sector: "PWD",
-    household: "HH-003",
-    street: "Molave St.",
-    categories: ["PWD"],
-  },
-  {
-    id: 4,
-    lastName: "Dela Cruz",
-    firstName: "Juan",
-    middleName: "M",
-    ext: "Jr",
-    pob: "Manila",
-    dob: "1995-07-10",
-    age: 29,
-    sex: "Male",
-    civilStatus: "Married",
-    citizenship: "Filipino",
-    occupation: "Clerk",
-    sector: "Labor Force",
-    household: "HH-004",
-    street: "Ipil-Ipil St.",
-    categories: [],
-  },
-  {
-    id: 5,
-    lastName: "Gomez",
-    firstName: "Maria",
-    middleName: "L",
-    ext: "",
-    pob: "Batangas",
-    dob: "1955-08-20",
-    age: 69,
-    sex: "Female",
-    civilStatus: "Widowed",
-    citizenship: "Filipino",
-    occupation: "Retired",
-    sector: "Senior Citizen",
-    household: "HH-005",
-    street: "Bata St.",
-    categories: ["Senior Citizen", "Indigent"],
-  },
-  {
-    id: 6,
-    lastName: "Reyes",
-    firstName: "Fernando",
-    middleName: "D",
-    ext: "",
-    pob: "Manila",
-    dob: "1948-11-12",
-    age: 76,
-    sex: "Male",
-    civilStatus: "Married",
-    citizenship: "Filipino",
-    occupation: "Retired",
-    sector: "Senior Citizen",
-    household: "HH-006",
-    street: "Mahogany St.",
-    categories: ["Senior Citizen"],
-  },
-  {
-    id: 7,
-    lastName: "Santos",
-    firstName: "Elena",
-    middleName: "F",
-    ext: "",
-    pob: "QC",
-    dob: "1990-01-30",
-    age: 34,
-    sex: "Female",
-    civilStatus: "Single",
-    citizenship: "Filipino",
-    occupation: "Accountant",
-    sector: "Solo Parent",
-    household: "HH-007",
-    street: "Narra St.",
-    categories: ["Solo Parent"],
-  },
-];
-
 const ageBrackets = [
   { label: "Under 5 years old", range: [0, 4] },
   { label: "5-9 years old", range: [5, 9] },
@@ -315,21 +185,6 @@ const COLORS = [
   "#06b6d4",
   "#ec4899",
   "#6366f1",
-];
-
-const ageGroupData = [
-  { name: "0-14", value: 850 },
-  { name: "15-24", value: 1200 },
-  { name: "25-64", value: 1300 },
-  { name: "65+", value: 217 },
-];
-
-const employmentData = [
-  { name: "Employed", value: 1500, color: "#3b82f6" },
-  { name: "Unemployed", value: 500, color: "#64748b" },
-  { name: "Self-Employed", value: 300, color: "#10b981" },
-  { name: "Student", value: 800, color: "#8b5cf6" },
-  { name: "Retired", value: 467, color: "#f59e0b" },
 ];
 
 // --- Form Preview Components ---
@@ -1104,12 +959,18 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
   const [rows, setRows] = useState<ReportDemographicsResident[]>([]);
   const [totalRows, setTotalRows] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
 
   useEffect(() => {
     if (!open) return;
     setSearchQuery("");
     setPage(1);
+    setSortOrder("asc");
   }, [category?.id, open]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [sortOrder]);
 
   const fetchBreakdown = useCallback(async () => {
     if (!open || !category) return;
@@ -1141,6 +1002,21 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
 
   if (!category) return null;
   const Icon = category.icon;
+  const sortedRows = [...rows].sort((a, b) => {
+    const compareName = `${a.LastName} ${a.FirstName}`.localeCompare(
+      `${b.LastName} ${b.FirstName}`,
+      undefined,
+      { sensitivity: "base" },
+    );
+
+    if (compareName !== 0) {
+      return sortOrder === "asc" ? compareName : -compareName;
+    }
+
+    return sortOrder === "asc"
+      ? Number(a.ResidentID) - Number(b.ResidentID)
+      : Number(b.ResidentID) - Number(a.ResidentID);
+  });
 
   const handleExportCSV = async () => {
     try {
@@ -1378,7 +1254,10 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                 }}
               >
                 <TableContainer sx={{ maxHeight: "calc(100vh - 350px)" }}>
-                  <Table stickyHeader>
+                  <Table
+                    stickyHeader
+                    sx={{ tableLayout: "fixed", minWidth: 1150 }}
+                  >
                     <TableHead>
                       <TableRow>
                         <TableCell
@@ -1386,6 +1265,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             bgcolor: "#f8fafc",
                             fontWeight: 800,
                             color: "#64748b",
+                            width: "25%",
                           }}
                         >
                           NAME
@@ -1395,6 +1275,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             bgcolor: "#f8fafc",
                             fontWeight: 800,
                             color: "#64748b",
+                            width: "7%",
                           }}
                         >
                           AGE
@@ -1404,6 +1285,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             bgcolor: "#f8fafc",
                             fontWeight: 800,
                             color: "#64748b",
+                            width: "10%",
                           }}
                         >
                           SEX
@@ -1413,6 +1295,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             bgcolor: "#f8fafc",
                             fontWeight: 800,
                             color: "#64748b",
+                            width: "11%",
                           }}
                         >
                           HOUSEHOLD
@@ -1422,6 +1305,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             bgcolor: "#f8fafc",
                             fontWeight: 800,
                             color: "#64748b",
+                            width: "14%",
                           }}
                         >
                           STREET
@@ -1431,6 +1315,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             bgcolor: "#f8fafc",
                             fontWeight: 800,
                             color: "#64748b",
+                            width: "12%",
                           }}
                         >
                           CIVIL STATUS
@@ -1440,6 +1325,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             bgcolor: "#f8fafc",
                             fontWeight: 800,
                             color: "#64748b",
+                            width: "13%",
                           }}
                         >
                           CITIZENSHIP
@@ -1450,6 +1336,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                             fontWeight: 800,
                             color: "#64748b",
                             textAlign: "center",
+                            width: "8%",
                           }}
                         >
                           ACTIONS
@@ -1467,7 +1354,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                         </TableRow>
                       )}
                       {!isLoading &&
-                        rows.map((res) => (
+                        sortedRows.map((res) => (
                           <TableRow key={res.ResidentID} hover>
                             <TableCell
                               sx={{ fontWeight: 700, color: "#1e293b" }}
@@ -1524,18 +1411,39 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                     </TableBody>
                   </Table>
                 </TableContainer>
-                <TablePagination
-                  rowsPerPageOptions={[10, 25, 50]}
-                  component="div"
-                  count={totalRows}
-                  rowsPerPage={rowsPerPage}
-                  page={Math.max(page - 1, 0)}
-                  onPageChange={(_e, newPage) => setPage(newPage + 1)}
-                  onRowsPerPageChange={(e) => {
-                    setRowsPerPage(parseInt(e.target.value, 10));
-                    setPage(1);
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    flexWrap: "wrap",
+                    gap: 2,
+                    px: 2,
+                    py: 1,
+                    borderTop: "1px solid #e5e7eb",
                   }}
-                />
+                >
+                  <SortOrderToggle
+                    order={sortOrder}
+                    onToggle={() =>
+                      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+                    }
+                    label="Sort"
+                  />
+                  <TablePagination
+                    rowsPerPageOptions={[10, 25, 50]}
+                    component="div"
+                    count={totalRows}
+                    rowsPerPage={rowsPerPage}
+                    page={Math.max(page - 1, 0)}
+                    onPageChange={(_e, newPage) => setPage(newPage + 1)}
+                    onRowsPerPageChange={(e) => {
+                      setRowsPerPage(parseInt(e.target.value, 10));
+                      setPage(1);
+                    }}
+                    sx={{ ml: "auto" }}
+                  />
+                </Box>
               </Paper>
             </Grid>
           </Grid>
@@ -1656,9 +1564,8 @@ const Reports: React.FC = () => {
     },
   ];
 
-  const ageChartData = demographicsSummary?.charts.ageGroups ?? ageGroupData;
-  const employmentChartData =
-    demographicsSummary?.charts.employment ?? employmentData;
+  const ageChartData = demographicsSummary?.charts.ageGroups ?? [];
+  const employmentChartData = demographicsSummary?.charts.employment ?? [];
 
   const templates = [
     {
@@ -1982,17 +1889,11 @@ const Reports: React.FC = () => {
                 <Zoom in={true} key={rbiTemplate}>
                   <Box sx={{ width: "100%", maxWidth: "8.5in" }}>
                     {rbiTemplate === "Form A" && (
-                      <FormA_Preview
-                        residents={
-                          formAResidents.length ? formAResidents : residentsData
-                        }
-                      />
+                      <FormA_Preview residents={formAResidents} />
                     )}
                     {rbiTemplate === "Form C" && (
                       <FormC_Preview
-                        residents={
-                          formAResidents.length ? formAResidents : residentsData
-                        }
+                        residents={formAResidents}
                         formCData={formCData}
                       />
                     )}

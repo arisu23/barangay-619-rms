@@ -27,59 +27,11 @@ import {
 import { Search, RotateCcw, UserX, Eye, Calendar } from "lucide-react";
 import { archiveService } from "../services/archiveService";
 import { notify } from "../utils/notify";
+import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 import type {
   ArchivedResident as ArchivedResidentApi,
   ResidentHistoryEntry,
 } from "../types";
-
-// --- Mock Archived Data ---
-const initialArchivedResidents = [
-  {
-    id: 101,
-    lastName: "Villanueva",
-    firstName: "Rico",
-    age: 78,
-    gender: "Male",
-    reason: "Deceased",
-    dateArchived: "2024-05-10",
-  },
-  {
-    id: 102,
-    lastName: "Santos",
-    firstName: "Emily",
-    age: 29,
-    gender: "Female",
-    reason: "Moved Out",
-    dateArchived: "2024-08-15",
-  },
-  {
-    id: 103,
-    lastName: "Reyes",
-    firstName: "Arthur",
-    age: 45,
-    gender: "Male",
-    reason: "Moved Out",
-    dateArchived: "2024-11-20",
-  },
-  {
-    id: 104,
-    lastName: "Pascual",
-    firstName: "Simeon",
-    age: 82,
-    gender: "Male",
-    reason: "Deceased",
-    dateArchived: "2025-01-05",
-  },
-  {
-    id: 106,
-    lastName: "Mendoza",
-    firstName: "Feliza",
-    age: 31,
-    gender: "Female",
-    reason: "Moved Out",
-    dateArchived: "2025-02-12",
-  },
-];
 
 interface ArchivedResidentRow {
   id: number;
@@ -107,11 +59,12 @@ const mapArchivedResident = (
 const Archive: React.FC = () => {
   const [archivedResidents, setArchivedResidents] = useState<
     ArchivedResidentRow[]
-  >(initialArchivedResidents);
+  >([]);
   const [isLoading, setIsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [reasonFilter, setReasonFilter] = useState("All");
   const [page, setPage] = useState(1);
+  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
   const rowsPerPage = 10;
 
   const [isRestoreDialogOpen, setIsRestoreDialogOpen] = useState(false);
@@ -187,7 +140,7 @@ const Archive: React.FC = () => {
 
   useEffect(() => {
     setPage(1);
-  }, [searchQuery, reasonFilter]);
+  }, [searchQuery, reasonFilter, sortOrder]);
 
   useEffect(() => {
     if (page > totalPages) {
@@ -195,7 +148,20 @@ const Archive: React.FC = () => {
     }
   }, [page, totalPages]);
 
-  const paginatedResidents = filteredResidents.slice(
+  const sortedResidents = [...filteredResidents].sort((a, b) => {
+    const dateA =
+      a.dateArchived === "-" ? 0 : new Date(a.dateArchived).getTime();
+    const dateB =
+      b.dateArchived === "-" ? 0 : new Date(b.dateArchived).getTime();
+
+    if (dateA === dateB) {
+      return sortOrder === "asc" ? a.id - b.id : b.id - a.id;
+    }
+
+    return sortOrder === "asc" ? dateA - dateB : dateB - dateA;
+  });
+
+  const paginatedResidents = sortedResidents.slice(
     (page - 1) * rowsPerPage,
     page * rowsPerPage,
   );
@@ -295,7 +261,7 @@ const Archive: React.FC = () => {
           variant="outlined"
           sx={{ borderRadius: 3, width: "100%" }}
         >
-          <Table stickyHeader sx={{ minWidth: 800 }}>
+          <Table stickyHeader sx={{ minWidth: 860, tableLayout: "fixed" }}>
             <TableHead>
               <TableRow sx={{ bgcolor: "#f8fafc" }}>
                 <TableCell
@@ -429,11 +395,21 @@ const Archive: React.FC = () => {
         <Box
           sx={{
             display: "flex",
-            justifyContent: "center",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 2,
+            flexWrap: "wrap",
             p: 2,
             borderTop: "1px solid #f1f5f9",
           }}
         >
+          <SortOrderToggle
+            order={sortOrder}
+            onToggle={() =>
+              setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
+            }
+            label="Sort"
+          />
           <Pagination
             count={totalPages}
             color="primary"

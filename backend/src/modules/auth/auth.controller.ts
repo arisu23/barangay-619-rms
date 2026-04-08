@@ -22,6 +22,18 @@ export const AuthController = {
         { expiresIn: "1h" },
       );
 
+      try {
+        await AuditTrailRepository.log({
+          userId: user.UserID,
+          action: "USER_LOGIN",
+          newValue: JSON.stringify({
+            loggedInAt: new Date().toISOString(),
+          }),
+        });
+      } catch (auditErr) {
+        console.error("Failed to write USER_LOGIN audit log:", auditErr);
+      }
+
       res.json({ token });
     } catch (err) {
       next(err);
@@ -35,7 +47,7 @@ export const AuthController = {
       await AuditTrailRepository.log({
         userId,
         action: "USER_LOGOUT",
-        newValue: JSON.stringify({ loggedOutAt: new Date().toISOString() })
+        newValue: JSON.stringify({ loggedOutAt: new Date().toISOString() }),
       });
 
       res.json({ success: true, message: "Logged out successfully!" });
@@ -51,8 +63,8 @@ export const AuthController = {
       success: true,
       data: {
         userId: user.userId,
-        role: user.role
-      }
+        role: user.role,
+      },
     });
-  }
+  },
 };
