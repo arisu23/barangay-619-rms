@@ -76,6 +76,7 @@ import type {
   ReportDemographicsSummary,
   ReportDemographicsResident,
   ReportFormARecord,
+  ReportFormAExportFormat,
   ReportFormCData,
 } from "../types";
 
@@ -189,7 +190,13 @@ const COLORS = [
 
 // --- Form Preview Components ---
 
-const FormA_Preview = ({ residents }: { residents: ResidentRecord[] }) => (
+const FormA_Preview = ({
+  residents,
+  totalResidents,
+}: {
+  residents: ResidentRecord[];
+  totalResidents: number;
+}) => (
   <Box
     sx={{
       bgcolor: "white",
@@ -238,7 +245,7 @@ const FormA_Preview = ({ residents }: { residents: ResidentRecord[] }) => (
       </Grid>
       <Grid size={{ xs: 6 }}>
         <Typography variant="body2">
-          <strong>NO. OF HOUSEHOLD MEMBERS:</strong> {residents.length}
+          <strong>NO. OF HOUSEHOLD MEMBERS:</strong> {totalResidents}
         </Typography>
       </Grid>
     </Grid>
@@ -530,9 +537,10 @@ const FormC_Preview = ({
       sx={{
         bgcolor: "white",
         p: 6,
-        minHeight: "11in",
+        height: "11in",
         border: "1px solid #e2e8f0",
         boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+        overflow: "hidden",
       }}
     >
       <Typography variant="caption" sx={{ fontWeight: "bold" }}>
@@ -852,11 +860,12 @@ const Certification_Preview = ({
     sx={{
       bgcolor: "white",
       p: 10,
-      minHeight: "11in",
+      height: "11in",
       border: "1px solid #e2e8f0",
       boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
       display: "flex",
       flexDirection: "column",
+      overflow: "hidden",
     }}
   >
     <Box sx={{ textAlign: "center", mb: 4 }}>
@@ -1463,10 +1472,18 @@ const Reports: React.FC = () => {
   );
   const [demographicsSummary, setDemographicsSummary] =
     useState<ReportDemographicsSummary | null>(null);
-  const [formAResidents, setFormAResidents] = useState<ResidentRecord[]>([]);
+  const [formAPreviewResidents, setFormAPreviewResidents] = useState<
+    ResidentRecord[]
+  >([]);
+  const [formAPreviewPage, setFormAPreviewPage] = useState(1);
+  const [formAPreviewRowsPerPage, setFormAPreviewRowsPerPage] = useState(25);
+  const [formAPreviewTotalRows, setFormAPreviewTotalRows] = useState(0);
   const [formCData, setFormCData] = useState<ReportFormCData | null>(null);
   const [isDemographicsLoading, setIsDemographicsLoading] = useState(false);
   const [isRbiLoading, setIsRbiLoading] = useState(false);
+  const [isFormAPreviewLoading, setIsFormAPreviewLoading] = useState(false);
+  const [formAExportingFormat, setFormAExportingFormat] =
+    useState<ReportFormAExportFormat | null>(null);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -1484,14 +1501,10 @@ const Reports: React.FC = () => {
     }
   }, []);
 
-  const fetchRbiData = useCallback(async () => {
+  const fetchFormCData = useCallback(async () => {
     setIsRbiLoading(true);
     try {
-      const [formA, formC] = await Promise.all([
-        reportService.getFormAData(),
-        reportService.getFormCData(),
-      ]);
-      setFormAResidents(formA.map(toResidentRecord));
+      const formC = await reportService.getFormCData();
       setFormCData(formC);
     } catch {
       notify.error("Failed to load RBI report data.");
@@ -1500,10 +1513,38 @@ const Reports: React.FC = () => {
     }
   }, []);
 
+  const fetchFormAPreview = useCallback(async () => {
+    setIsFormAPreviewLoading(true);
+    try {
+      const response = await reportService.getFormAPreview({
+        page: formAPreviewPage,
+        limit: formAPreviewRowsPerPage,
+      });
+
+      const offset = (response.page - 1) * response.limit;
+      setFormAPreviewResidents(
+        response.data.map((record, index) =>
+          toResidentRecord(record, offset + index),
+        ),
+      );
+      setFormAPreviewTotalRows(response.total);
+    } catch {
+      notify.error("Failed to load Form A preview data.");
+      setFormAPreviewResidents([]);
+      setFormAPreviewTotalRows(0);
+    } finally {
+      setIsFormAPreviewLoading(false);
+    }
+  }, [formAPreviewPage, formAPreviewRowsPerPage]);
+
   useEffect(() => {
     fetchDemographics();
-    fetchRbiData();
-  }, [fetchDemographics, fetchRbiData]);
+    fetchFormCData();
+  }, [fetchDemographics, fetchFormCData]);
+
+  useEffect(() => {
+    fetchFormAPreview();
+  }, [fetchFormAPreview]);
 
   const stats = [
     {
@@ -1590,6 +1631,47 @@ const Reports: React.FC = () => {
       color: "#be185d",
     },
   ];
+
+  const handleFormAExport = async (format: ReportFormAExportFormat) => {
+    if (rbiTemplate !== "Form A") {
+      notify.info("Form A exports are available only when Form A is selected.");
+      return;
+    }
+
+    if (formAExportingFormat) return;
+
+    const formatLabel = format.toUpperCase();
+    setFormAExportingFormat(format);
+    notify.info(`Preparing Form A ${formatLabel} export...`);
+
+    try {
+      const { blob, fileName } = await reportService.exportFormA(format);
+
+      const fileUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = fileUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(fileUrl);
+
+      notify.success(`Form A ${formatLabel} exported successfully.`);
+    } catch {
+      notify.error(`Failed to export Form A ${formatLabel}.`);
+    } finally {
+      setFormAExportingFormat(null);
+    }
+  };
+
+  const formAPreviewStart =
+    formAPreviewTotalRows === 0
+      ? 0
+      : (formAPreviewPage - 1) * formAPreviewRowsPerPage + 1;
+  const formAPreviewEnd = Math.min(
+    formAPreviewPage * formAPreviewRowsPerPage,
+    formAPreviewTotalRows,
+  );
 
   return (
     <Box
@@ -1877,23 +1959,62 @@ const Reports: React.FC = () => {
                   </IconButton>
                 </Box>
 
-                {isRbiLoading && (
+                {(isRbiLoading ||
+                  (rbiTemplate === "Form A" && isFormAPreviewLoading)) && (
                   <Typography
                     variant="body2"
                     sx={{ mb: 2, color: "text.secondary", fontWeight: 600 }}
                   >
-                    Loading RBI data...
+                    {rbiTemplate === "Form A"
+                      ? "Loading Form A preview data..."
+                      : "Loading RBI data..."}
                   </Typography>
                 )}
 
                 <Zoom in={true} key={rbiTemplate}>
                   <Box sx={{ width: "100%", maxWidth: "8.5in" }}>
                     {rbiTemplate === "Form A" && (
-                      <FormA_Preview residents={formAResidents} />
+                      <Stack spacing={2}>
+                        <FormA_Preview
+                          residents={formAPreviewResidents}
+                          totalResidents={formAPreviewTotalRows}
+                        />
+                        <Paper variant="outlined" sx={{ borderRadius: 2 }}>
+                          <Box
+                            sx={{
+                              px: 2,
+                              pt: 1,
+                              color: "#475569",
+                              fontSize: "0.75rem",
+                              fontWeight: 600,
+                            }}
+                          >
+                            Showing {formAPreviewStart.toLocaleString()}-
+                            {formAPreviewEnd.toLocaleString()} of{" "}
+                            {formAPreviewTotalRows.toLocaleString()} records
+                          </Box>
+                          <TablePagination
+                            component="div"
+                            count={formAPreviewTotalRows}
+                            rowsPerPage={formAPreviewRowsPerPage}
+                            page={Math.max(formAPreviewPage - 1, 0)}
+                            onPageChange={(_event, newPage) =>
+                              setFormAPreviewPage(newPage + 1)
+                            }
+                            onRowsPerPageChange={(event) => {
+                              setFormAPreviewRowsPerPage(
+                                parseInt(event.target.value, 10),
+                              );
+                              setFormAPreviewPage(1);
+                            }}
+                            rowsPerPageOptions={[25, 50, 100]}
+                          />
+                        </Paper>
+                      </Stack>
                     )}
                     {rbiTemplate === "Form C" && (
                       <FormC_Preview
-                        residents={formAResidents}
+                        residents={formAPreviewResidents}
                         formCData={formCData}
                       />
                     )}
@@ -1902,7 +2023,7 @@ const Reports: React.FC = () => {
                         inhabitantsCount={
                           demographicsSummary?.stats.inhabitants ??
                           formCData?.summary.totalInhabitants ??
-                          formAResidents.length ??
+                          formAPreviewTotalRows ??
                           0
                         }
                       />
@@ -1910,8 +2031,10 @@ const Reports: React.FC = () => {
                   </Box>
                 </Zoom>
 
-                {/* Bottom padding for better scroll feel */}
-                <Box sx={{ height: 100, flexShrink: 0 }} />
+                {/* Keep a little scroll tail for non-Form A previews only */}
+                {rbiTemplate !== "Form A" && (
+                  <Box sx={{ height: 100, flexShrink: 0 }} />
+                )}
               </Box>
 
               {/* Right Control Panel / Sidebar (Independent Scroll) */}
@@ -2059,9 +2182,43 @@ const Reports: React.FC = () => {
                 <Box sx={{ mt: "auto", pt: 4 }}>
                   <Stack spacing={2}>
                     <Button
+                      variant="outlined"
+                      fullWidth
+                      startIcon={<FileDown size={18} />}
+                      onClick={() => void handleFormAExport("csv")}
+                      disabled={
+                        rbiTemplate !== "Form A" || !!formAExportingFormat
+                      }
+                      sx={{ fontWeight: 700, borderRadius: 2, py: 1.5 }}
+                    >
+                      {formAExportingFormat === "csv"
+                        ? "Exporting CSV..."
+                        : "Download CSV"}
+                    </Button>
+
+                    <Button
+                      variant="outlined"
+                      fullWidth
+                      startIcon={<FileSpreadsheet size={18} />}
+                      onClick={() => void handleFormAExport("xlsx")}
+                      disabled={
+                        rbiTemplate !== "Form A" || !!formAExportingFormat
+                      }
+                      sx={{ fontWeight: 700, borderRadius: 2, py: 1.5 }}
+                    >
+                      {formAExportingFormat === "xlsx"
+                        ? "Exporting XLSX..."
+                        : "Download XLSX"}
+                    </Button>
+
+                    <Button
                       variant="contained"
                       fullWidth
-                      startIcon={<Download size={18} />}
+                      startIcon={<Printer size={18} />}
+                      onClick={() => void handleFormAExport("pdf")}
+                      disabled={
+                        rbiTemplate !== "Form A" || !!formAExportingFormat
+                      }
                       sx={{
                         bgcolor: "#2e0249",
                         fontWeight: 700,
@@ -2069,16 +2226,15 @@ const Reports: React.FC = () => {
                         py: 1.5,
                       }}
                     >
-                      Export as PDF
+                      {formAExportingFormat === "pdf"
+                        ? "Preparing Official PDF..."
+                        : "Official PDF"}
                     </Button>
-                    <Button
-                      variant="outlined"
-                      fullWidth
-                      startIcon={<FileSpreadsheet size={18} />}
-                      sx={{ fontWeight: 700, borderRadius: 2, py: 1.5 }}
-                    >
-                      Download XLSX
-                    </Button>
+
+                    <Typography variant="caption" color="text.secondary">
+                      Form A only: CSV/XLSX for high-volume export, Official PDF
+                      for printable copy.
+                    </Typography>
                   </Stack>
                 </Box>
               </Box>

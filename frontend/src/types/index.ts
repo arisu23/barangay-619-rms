@@ -61,6 +61,24 @@ export interface Resident {
   Mothers_Maiden_MiddleName?: string;
   HouseholdID?: number;
   householdId?: number;
+  HouseholdNumber?: string | null;
+  UnitRoomFloor?: string | null;
+  BuildingName?: string | null;
+  LotBlockPhase?: string | null;
+  HouseNumber?: string | null;
+  Street?: string | null;
+  Barangay?: string | null;
+  Municipality?: string | null;
+  HouseholdRole?: "head" | "member" | null;
+  HouseholdHeadName?: string | null;
+  OccupancyStatus?: "Owner" | "Renter" | "Sharer" | "Boarder" | null;
+  Categories?: string | null;
+  EducationLevel?: string | null;
+  EducationStatus?: string | null;
+  Occupation?: string | null;
+  EmploymentStatus?: string | null;
+  PrecinctNumber?: string | null;
+  VoterID?: string | null;
 }
 
 // Slim version returned by getAllResidents
@@ -73,6 +91,7 @@ export interface ResidentListItem {
   CivilStatus?: string;
   ResidentStatus: string;
   HouseholdID?: number;
+  Categories?: string | null;
 }
 
 export interface CreateResidentData {
@@ -92,6 +111,17 @@ export interface CreateResidentData {
   mothersMaidenSurname?: string;
   mothersMaidenFirstName?: string;
   mothersMaidenMiddleName?: string;
+  hasEducation?: "yes" | "no";
+  educationLevel?: string;
+  educationStatus?: string;
+  isEmployed?: "yes" | "no";
+  occupation?: string;
+  employmentStatus?: string;
+  isVoter?: "yes" | "no";
+  precinctNumber?: string;
+  categories?: string[];
+  householdRole?: "head" | "member";
+  occupancyStatus?: "Owner" | "Renter" | "Sharer" | "Boarder";
   householdId?: number;
   address: {
     unitRoomFloor?: string;
@@ -334,6 +364,16 @@ export interface ReportFormARecord {
   Categories?: string | null;
 }
 
+export type ReportFormAExportFormat = "csv" | "xlsx" | "pdf";
+
+export interface ReportFormAPreviewResponse {
+  data: ReportFormARecord[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export interface ReportFormCAgeBracket {
   bracket: string;
   male: number;
@@ -395,6 +435,7 @@ export interface ArchivedResident {
   Sex: string;
   ResidentStatus: string;
   DateofDeath?: string | null;
+  DateArchived?: string | null;
 }
 
 export interface ResidentHistoryEntry {

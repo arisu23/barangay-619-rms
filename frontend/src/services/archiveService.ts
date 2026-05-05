@@ -2,6 +2,14 @@ import api from "./api";
 import type { ArchivedResident, ResidentHistoryEntry } from "../types";
 
 export const archiveService = {
+  async archiveResident(
+    residentId: number,
+    payload: { status: "Deceased" | "MovedOut"; dateOfDeath?: string },
+  ): Promise<{ success: boolean; message: string }> {
+    const response = await api.post(`/archives/${residentId}`, payload);
+    return response.data;
+  },
+
   async getArchivedResidents(): Promise<ArchivedResident[]> {
     const response = await api.get("/archives");
     return response.data.data;

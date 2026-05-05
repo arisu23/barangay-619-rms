@@ -1,6 +1,21 @@
 import { ResidentRepository } from "./resident.repository.js";
 import { AuditTrailRepository } from "../audit/audit.repository.js";
 
+const isNonEmptyString = (value: unknown): boolean =>
+  typeof value === "string" && value.trim().length > 0;
+
+const toPositiveInteger = (value: unknown): number | null => {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return parsed;
+};
+
+const isValidOccupancyStatus = (value: unknown): boolean =>
+  typeof value === "string" && ["Owner", "Renter", "Sharer", "Boarder"].includes(value.trim());
+
 export class ResidentService {
   static async createResident(data: any, userId: number) {
     //Resident data validation
@@ -8,23 +23,90 @@ export class ResidentService {
       throw { status: 400, message: "Missing required resident fields!" };
     }
 
+    const address =
+      typeof data.address === "object" && data.address !== null
+        ? (data.address as Record<string, unknown>)
+        : null;
+
+    if (!address) {
+      throw {
+        status: 400,
+        message: "Address details are required!",
+      };
+    }
+
+    const hasCompleteAddress =
+      isNonEmptyString(address.houseNumber) &&
+      isNonEmptyString(address.street) &&
+      isNonEmptyString(address.barangay) &&
+      isNonEmptyString(address.municipality);
+
+    if (!hasCompleteAddress) {
+      throw {
+        status: 400,
+        message:
+          "Address fields houseNumber, street, barangay, and municipality are required!",
+      };
+    }
+
+    if (
+      data.householdId !== undefined &&
+      data.householdId !== null &&
+      data.householdId !== ""
+    ) {
+      const householdId = toPositiveInteger(data.householdId);
+
+      if (!householdId) {
+        throw {
+          status: 400,
+          message: "Invalid household ID!",
+        };
+      }
+
+      data.householdId = householdId;
+    }
+
+    if (
+      data.occupancyStatus !== undefined &&
+      data.occupancyStatus !== null &&
+      data.occupancyStatus !== "" &&
+      !isValidOccupancyStatus(data.occupancyStatus)
+    ) {
+      throw {
+        status: 400,
+        message: "Invalid occupancy status!",
+      };
+    }
+
     //Duplicate resident validation
     if (data.dateOfBirth) {
       const duplicate = await ResidentRepository.findDuplicate(
         data.firstName,
         data.lastName,
-        data.dateOfBirth
+        data.dateOfBirth,
       );
 
       if (duplicate) {
         throw {
           status: 409,
-          message: `Duplicate resident found: ${duplicate.FirstName} ${duplicate.LastName} (ID: ${duplicate.ResidentID}, Status: ${duplicate.ResidentStatus})`
-        }
+          message: `Duplicate resident found: ${duplicate.FirstName} ${duplicate.LastName} (ID: ${duplicate.ResidentID}, Status: ${duplicate.ResidentStatus})`,
+        };
       }
     }
 
-    const residentId = await ResidentRepository.createResident(data);
+    let residentId: number;
+    try {
+      residentId = await ResidentRepository.createResident(data);
+    } catch (error: any) {
+      if (error?.errno === 1452 || error?.code === "ER_NO_REFERENCED_ROW_2") {
+        throw {
+          status: 400,
+          message: "Invalid household ID!",
+        };
+      }
+
+      throw error;
+    }
 
     //Audit Log
     await AuditTrailRepository.log({
@@ -66,6 +148,15 @@ export class ResidentService {
       !["Active", "MovedOut", "Deceased"].includes(data.residentStatus)
     ) {
       throw { status: 400, message: "Invalid resident status!" };
+    }
+
+    if (
+      data.occupancyStatus !== undefined &&
+      data.occupancyStatus !== null &&
+      data.occupancyStatus !== "" &&
+      !isValidOccupancyStatus(data.occupancyStatus)
+    ) {
+      throw { status: 400, message: "Invalid occupancy status!" };
     }
 
     const updated = await ResidentRepository.updateResident(id, data);

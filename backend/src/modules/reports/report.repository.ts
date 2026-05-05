@@ -1,10 +1,35 @@
 import { pool } from "../../config/database.js";
 
-export class ReportRepository {
-  // ═══════════════════════════════════════════
-  //  DEMOGRAPHICS - Summary counts (UC8)
-  // ═══════════════════════════════════════════
+const toNumber = (value: unknown): number => {
+  if (typeof value === "bigint") return Number(value);
 
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  if (typeof value === "number") return value;
+
+  return 0;
+};
+
+export interface FormADataQueryOptions {
+  householdId?: number;
+  page?: number;
+  limit?: number;
+  disablePagination?: boolean;
+}
+
+export interface FormADataResult {
+  data: any[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+export class ReportRepository {
+  //  DEMOGRAPHICS - Summary counts (UC8)
   //Total active inhabitants
   static async getTotalInhabitants(): Promise<number> {
     const conn = await pool.getConnection();
@@ -269,14 +294,20 @@ export class ReportRepository {
         conn.query(countQuery, countParams),
       ]);
 
-      const total = Number(totalRows[0].total);
+      const normalizedData = data.map((row: any) => ({
+        ...row,
+        ResidentID: toNumber(row.ResidentID),
+        Age: toNumber(row.Age),
+      }));
+
+      const total = toNumber(totalRows[0]?.total);
 
       return {
-        data,
+        data: normalizedData,
         total,
         page: safePage,
         limit: safeLimit,
-        totalPages: Math.ceil(total / safeLimit),
+        totalPages: Math.max(1, Math.ceil(total / safeLimit)),
       };
     } finally {
       conn.release();
@@ -287,10 +318,44 @@ export class ReportRepository {
   //  RBI FORM A - Residents by household (UC9)
   // ═══════════════════════════════════════════
 
-  static async getFormAData(householdId?: number) {
+  static async getFormAData(
+    options: FormADataQueryOptions = {},
+  ): Promise<FormADataResult> {
     const conn = await pool.getConnection();
     try {
-      let query = `SELECT
+      const disablePagination = options.disablePagination === true;
+      const safePage =
+        Number.isFinite(options.page) && Number(options.page) > 0
+          ? Math.floor(Number(options.page))
+          : 1;
+      const requestedLimit =
+        Number.isFinite(options.limit) && Number(options.limit) > 0
+          ? Math.floor(Number(options.limit))
+          : 25;
+      const safeLimit = Math.min(requestedLimit, 200);
+
+      const whereClauses = ["r.ResidentStatus = 'Active'"];
+      const baseParams: any[] = [];
+
+      if (options.householdId) {
+        whereClauses.push("r.HouseholdID = ?");
+        baseParams.push(options.householdId);
+      }
+
+      const whereSql = `WHERE ${whereClauses.join(" AND ")}`;
+
+      const baseFrom = `
+            FROM Resident r
+            LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID
+            LEFT JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
+            LEFT JOIN Address a ON h.AddressID = a.AddressID
+            LEFT JOIN Employment e ON r.ResidentID = e.ResidentID
+            LEFT JOIN ResidentCategory rc ON r.ResidentID = rc.ResidentID
+            LEFT JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID`;
+
+      const countQuery = `SELECT COUNT(DISTINCT r.ResidentID) as total ${baseFrom} ${whereSql}`;
+
+      let dataQuery = `SELECT
                 r.LastName, r.FirstName, r.MiddleName, r.Suffix,
                 r.PlaceOfBirth, r.DateOfBirth,
                 TIMESTAMPDIFF(YEAR, r.DateOfBirth, CURDATE()) as Age,
@@ -300,24 +365,42 @@ export class ReportRepository {
                 a.Street_Alley_Zone as Street,
                 a.Barangay,
                 GROUP_CONCAT(sc.CategoryName SEPARATOR ', ') as Categories
-            FROM Resident r
-            LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID
-            LEFT JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
-            LEFT JOIN Address a ON h.AddressID = a.AddressID
-            LEFT JOIN Employment e ON r.ResidentID = e.ResidentID
-            LEFT JOIN ResidentCategory rc ON r.ResidentID = rc.ResidentID
-            LEFT JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
-            WHERE r.ResidentStatus = 'Active'`;
+            ${baseFrom}
+            ${whereSql}
+            GROUP BY r.ResidentID
+            ORDER BY hn.HouseholdNumberName, r.LastName, r.FirstName`;
 
-      const params: any[] = [];
-      if (householdId) {
-        query += ` AND r.HouseholdID = ?`;
-        params.push(householdId);
+      const dataParams = [...baseParams];
+      if (!disablePagination) {
+        const offset = (safePage - 1) * safeLimit;
+        dataQuery += ` LIMIT ? OFFSET ?`;
+        dataParams.push(safeLimit, offset);
       }
 
-      query += ` GROUP BY r.ResidentID ORDER BY hn.HouseholdNumberName, r.LastName, r.FirstName`;
+      const [rows, totalRows] = await Promise.all([
+        conn.query(dataQuery, dataParams),
+        conn.query(countQuery, baseParams),
+      ]);
 
-      return await conn.query(query, params);
+      const normalizedRows = rows.map((row: any) => ({
+        ...row,
+        Age: toNumber(row.Age),
+      }));
+
+      const total = toNumber(totalRows[0]?.total);
+      const effectiveLimit = disablePagination
+        ? Math.max(normalizedRows.length, 1)
+        : safeLimit;
+
+      return {
+        data: normalizedRows,
+        total,
+        page: disablePagination ? 1 : safePage,
+        limit: effectiveLimit,
+        totalPages: disablePagination
+          ? 1
+          : Math.max(1, Math.ceil(total / effectiveLimit)),
+      };
     } finally {
       conn.release();
     }
@@ -400,15 +483,39 @@ export class ReportRepository {
         `SELECT COUNT(*) as total FROM FamilyHead`,
       );
 
+      const normalizedAgeBrackets = ageBrackets.map((row: any) => ({
+        ...row,
+        male: toNumber(row.male),
+        female: toNumber(row.female),
+        total: toNumber(row.total),
+      }));
+
+      const normalizedSectors = sectors.map((row: any) => ({
+        ...row,
+        male: toNumber(row.male),
+        female: toNumber(row.female),
+        total: toNumber(row.total),
+      }));
+
+      const normalizedCivilStatus = civilStatus.map((row: any) => ({
+        ...row,
+        total: toNumber(row.total),
+      }));
+
+      const normalizedCitizenship = citizenship.map((row: any) => ({
+        ...row,
+        total: toNumber(row.total),
+      }));
+
       return {
-        ageBrackets,
-        sectors,
-        civilStatus,
-        citizenship,
+        ageBrackets: normalizedAgeBrackets,
+        sectors: normalizedSectors,
+        civilStatus: normalizedCivilStatus,
+        citizenship: normalizedCitizenship,
         summary: {
-          totalInhabitants: Number(totalInhabitants[0].total),
-          totalHouseholds: Number(totalHouseholds[0].total),
-          totalFamilies: Number(totalFamilies[0].total),
+          totalInhabitants: toNumber(totalInhabitants[0].total),
+          totalHouseholds: toNumber(totalHouseholds[0].total),
+          totalFamilies: toNumber(totalFamilies[0].total),
         },
       };
     } finally {

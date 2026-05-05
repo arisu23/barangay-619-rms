@@ -13,10 +13,16 @@ router.use(authorizeRole("Admin", "Staff"));
 router.get("/demographics", ReportController.getDemographicsSummary);
 
 //GET /api/reports/demographics/:category - Detailed breakdown by category
-router.get("/demographics/:category", ReportController.getDemographicsByCategory);
+router.get(
+  "/demographics/:category",
+  ReportController.getDemographicsByCategory,
+);
 
 //GET /api/reports/rbi/form-a - RBI Form A data (by household)
 router.get("/rbi/form-a", ReportController.getFormAData);
+
+//GET /api/reports/rbi/form-a/export - Export Form A as CSV/XLSX/PDF
+router.get("/rbi/form-a/export", ReportController.exportFormA);
 
 //GET /api/reports/rbi/form-c - RBI Form C population monitoring data
 router.get("/rbi/form-c", ReportController.getFormCData);

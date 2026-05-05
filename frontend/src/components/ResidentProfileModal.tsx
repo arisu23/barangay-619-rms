@@ -85,7 +85,7 @@ const emptyFormData = {
   street: "",
   barangay: "",
   city: "",
-  householdRole: "head",
+  householdRole: "",
   householdNumber: "",
   occupancyStatus: "",
   householdHeadName: "",
@@ -98,6 +98,26 @@ const emptyFormData = {
   isVoter: "no",
   precinctNumber: "",
   categories: [] as string[],
+};
+
+const profileCategoryOptions = [
+  "PWD",
+  "Solo Parent",
+  "Pregnant Woman",
+  "OSY",
+  "OSC",
+  "4Ps",
+  "OFW",
+  "IP",
+];
+
+const parseCategories = (categories?: string | null): string[] => {
+  if (!categories) return [];
+
+  return categories
+    .split(",")
+    .map((category) => category.trim())
+    .filter(Boolean);
 };
 
 const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
@@ -121,6 +141,14 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
         setIsLoadingProfile(true);
         try {
           const data = await residentService.getById(Number(residentId));
+
+          const normalizedHouseholdRole =
+            data.HouseholdRole === "head" || data.HouseholdRole === "member"
+              ? data.HouseholdRole
+              : data.HouseholdID
+                ? "member"
+                : "";
+
           const mapped = {
             ...emptyFormData,
             firstName: data.FirstName || "",
@@ -143,6 +171,29 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
             religion: data.Religion || "",
             contactNumber: data.RContactNumber || "",
             email: data.REmail || "",
+            unitRoom: data.UnitRoomFloor || "",
+            building: data.BuildingName || "",
+            lotBlock: data.LotBlockPhase || "",
+            street: data.Street || "",
+            barangay: data.Barangay || "",
+            city: data.Municipality || "",
+            householdRole: normalizedHouseholdRole,
+            householdNumber: data.HouseholdNumber || "",
+            occupancyStatus: data.OccupancyStatus || "",
+            householdHeadName: data.HouseholdHeadName || "",
+            hasEducation:
+              data.EducationLevel || data.EducationStatus ? "yes" : "no",
+            educationLevel: data.EducationLevel || "",
+            educationStatus:
+              data.EducationStatus === "Ongoing"
+                ? "Enrolled"
+                : data.EducationStatus || "",
+            isEmployed: data.Occupation || data.EmploymentStatus ? "yes" : "no",
+            occupation: data.Occupation || "",
+            employmentStatus: data.EmploymentStatus || "",
+            isVoter: data.PrecinctNumber || data.VoterID ? "yes" : "no",
+            precinctNumber: data.PrecinctNumber || "",
+            categories: parseCategories(data.Categories),
           };
           setFormData(mapped);
           setOriginalData(mapped);
@@ -175,23 +226,47 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
     setIsSaving(true);
     try {
       await residentService.update(Number(residentId), {
-        FirstName: formData.firstName,
-        MiddleName: formData.middleName || undefined,
-        LastName: formData.lastName,
-        Suffix: formData.suffix || undefined,
-        Sex: formData.sex as "Male" | "Female",
-        CivilStatus: formData.civilStatus,
-        Religion: formData.religion || undefined,
-        RContactNumber: formData.contactNumber || undefined,
-        REmail: formData.email || undefined,
-        ResidentStatus: "Active",
-        Mothers_Maiden_Surname:
+        firstName: formData.firstName,
+        middleName: formData.middleName || undefined,
+        lastName: formData.lastName,
+        suffix: formData.suffix || undefined,
+        sex: formData.sex as "Male" | "Female",
+        dateOfBirth: formData.dob || undefined,
+        placeOfBirth: formData.placeOfBirth || undefined,
+        civilStatus: formData.civilStatus,
+        citizenship: formData.citizenship || undefined,
+        inhabitantType: formData.inhabitantType || undefined,
+        religion: formData.religion || undefined,
+        contactNumber: formData.contactNumber || undefined,
+        email: formData.email || undefined,
+        residentStatus: "Active",
+        mothersMaidenSurname:
           formData.mothersMaidenName?.split(" ").pop() || undefined,
-        Mothers_Maiden_FirstName:
+        mothersMaidenFirstName:
           formData.mothersMaidenName?.split(" ")[0] || undefined,
-        Mothers_Maiden_MiddleName:
+        mothersMaidenMiddleName:
           formData.mothersMaidenName?.split(" ")[1] || undefined,
-      } as Partial<import("../types").Resident>);
+        hasEducation: formData.hasEducation as "yes" | "no",
+        educationLevel: formData.educationLevel || undefined,
+        educationStatus: formData.educationStatus || undefined,
+        isEmployed: formData.isEmployed as "yes" | "no",
+        occupation: formData.occupation || undefined,
+        employmentStatus: formData.employmentStatus || undefined,
+        isVoter: formData.isVoter as "yes" | "no",
+        precinctNumber: formData.precinctNumber || undefined,
+        categories: formData.categories,
+        householdRole:
+          formData.householdRole === "head" || formData.householdRole === "member"
+            ? formData.householdRole
+            : undefined,
+        occupancyStatus:
+          formData.occupancyStatus === "Owner" ||
+          formData.occupancyStatus === "Renter" ||
+          formData.occupancyStatus === "Sharer" ||
+          formData.occupancyStatus === "Boarder"
+            ? formData.occupancyStatus
+            : undefined,
+      });
       notify.success("Resident updated successfully!");
       setIsEditing(false);
       setOriginalData(formData);
@@ -264,6 +339,8 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
 
     // View Mode
     if (field === "householdRole") {
+      const roleValue = value === "head" || value === "member" ? value : "";
+
       return (
         <Box sx={{ mb: 1 }}>
           <Typography
@@ -274,13 +351,24 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
             {label}
           </Typography>
           <Chip
-            label={value === "head" ? "HEAD OF FAMILY" : "MEMBER"}
+            label={
+              roleValue === "head"
+                ? "HEAD OF FAMILY"
+                : roleValue === "member"
+                  ? "MEMBER"
+                  : "-"
+            }
             size="small"
             sx={{
               fontWeight: 700,
               borderRadius: 1,
-              bgcolor: value === "head" ? "#4f46e5" : "#f3f4f6",
-              color: value === "head" ? "#ffffff" : "#374151",
+              bgcolor:
+                roleValue === "head"
+                  ? "#4f46e5"
+                  : roleValue === "member"
+                    ? "#f3f4f6"
+                    : "#f9fafb",
+              color: roleValue === "head" ? "#ffffff" : "#374151",
               fontSize: "0.75rem",
               height: 24,
             }}
@@ -766,7 +854,7 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
                                   "Occupancy Status",
                                   "occupancyStatus",
                                   "select",
-                                  ["Owner", "Renter", "Sharer"],
+                                  ["Owner", "Renter", "Sharer", "Boarder"],
                                 )}
                               </Grid>
                             </>
@@ -788,7 +876,13 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
                                   LINKED FAMILY HEAD
                                 </Typography>
                                 <Typography variant="body1">
-                                  Carlos Abad (Household 1)
+                                  {formData.householdHeadName
+                                    ? `${formData.householdHeadName}${
+                                        formData.householdNumber
+                                          ? ` (Household ${formData.householdNumber})`
+                                          : ""
+                                      }`
+                                    : "Not available"}
                                 </Typography>
                               </Box>
                             </Grid>
@@ -897,14 +991,7 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
 
                       {isEditing ? (
                         <Grid container spacing={2}>
-                          {[
-                            "PWD",
-                            "Solo Parent",
-                            "Senior Citizen",
-                            "Indigent",
-                            "4Ps Beneficiary",
-                            "Youth",
-                          ].map((cat) => {
+                          {profileCategoryOptions.map((cat) => {
                             const isSelected =
                               formData.categories.includes(cat);
                             return (

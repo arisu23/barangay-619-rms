@@ -43,6 +43,73 @@ interface ArchivedResidentRow {
   dateArchived: string;
 }
 
+const toDisplayDate = (value?: string | null): string => {
+  if (!value) {
+    return "-";
+  }
+
+  const raw = String(value).trim();
+  const dateMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (dateMatch) {
+    return `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}`;
+  }
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return "-";
+  }
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
+const toDateSortValue = (value: string): number => {
+  const dateMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateMatch) {
+    return 0;
+  }
+
+  const year = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]) - 1;
+  const day = Number(dateMatch[3]);
+  return Date.UTC(year, month, day);
+};
+
+const getHistoryActionCopy = (
+  changeType: string,
+): { title: string; description: string } => {
+  switch (changeType) {
+    case "Deceased":
+      return {
+        title: "Archived as Deceased",
+        description:
+          "The resident record was moved to archive because the resident was marked as deceased.",
+      };
+    case "MovedOut":
+      return {
+        title: "Archived as Moved Out",
+        description:
+          "The resident record was moved to archive because the resident was marked as moved out.",
+      };
+    case "Returned":
+      return {
+        title: "Restored to Active",
+        description:
+          "The resident record was returned from archive and is now visible in the active registry again.",
+      };
+    default:
+      return {
+        title: changeType,
+        description:
+          "A resident record update was captured in the system history.",
+      };
+  }
+};
+
 const mapArchivedResident = (
   resident: ArchivedResidentApi,
 ): ArchivedResidentRow => ({
@@ -51,9 +118,7 @@ const mapArchivedResident = (
   firstName: resident.FirstName,
   gender: resident.Sex,
   reason: resident.ResidentStatus === "MovedOut" ? "Moved Out" : "Deceased",
-  dateArchived: resident.DateofDeath
-    ? new Date(resident.DateofDeath).toLocaleDateString("en-CA")
-    : "-",
+  dateArchived: toDisplayDate(resident.DateArchived ?? resident.DateofDeath),
 });
 
 const Archive: React.FC = () => {
@@ -149,10 +214,8 @@ const Archive: React.FC = () => {
   }, [page, totalPages]);
 
   const sortedResidents = [...filteredResidents].sort((a, b) => {
-    const dateA =
-      a.dateArchived === "-" ? 0 : new Date(a.dateArchived).getTime();
-    const dateB =
-      b.dateArchived === "-" ? 0 : new Date(b.dateArchived).getTime();
+    const dateA = toDateSortValue(a.dateArchived);
+    const dateB = toDateSortValue(b.dateArchived);
 
     if (dateA === dateB) {
       return sortOrder === "asc" ? a.id - b.id : b.id - a.id;
@@ -471,13 +534,41 @@ const Archive: React.FC = () => {
         </DialogTitle>
         <DialogContent dividers>
           {isHistoryLoading ? (
-            <Typography color="text.secondary">Loading history...</Typography>
-          ) : history.length === 0 ? (
             <Typography color="text.secondary">
-              No history records found.
+              Loading resident activity history...
             </Typography>
+          ) : history.length === 0 ? (
+            <Box
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                bgcolor: "#f8fafc",
+                border: "1px solid #e2e8f0",
+              }}
+            >
+              <Typography sx={{ fontWeight: 700, color: "#0f172a", mb: 0.75 }}>
+                No activity yet for this archived record.
+              </Typography>
+              <Typography color="text.secondary" variant="body2">
+                History entries will appear here whenever the resident is
+                archived, restored, or moved between statuses.
+              </Typography>
+            </Box>
           ) : (
             <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+              <Box
+                sx={{
+                  p: 1.5,
+                  borderRadius: 2,
+                  bgcolor: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                }}
+              >
+                <Typography variant="body2" sx={{ color: "#475569" }}>
+                  This timeline shows when the resident record was archived or
+                  restored, and who performed each action.
+                </Typography>
+              </Box>
               {history.map((item) => (
                 <Paper
                   key={item.HistoryID}
@@ -488,11 +579,17 @@ const Archive: React.FC = () => {
                     variant="body2"
                     sx={{ fontWeight: 700, color: "#1e293b" }}
                   >
-                    {item.ChangeType}
+                    {getHistoryActionCopy(item.ChangeType).title}
                   </Typography>
                   <Typography variant="caption" sx={{ color: "#64748b" }}>
-                    {new Date(item.ChangeDate).toLocaleDateString("en-CA")} •{" "}
+                    {toDisplayDate(item.ChangeDate)} •{" "}
                     {item.changedBy || "System"}
+                  </Typography>
+                  <Typography
+                    variant="body2"
+                    sx={{ color: "#475569", mt: 0.75, fontSize: "0.8rem" }}
+                  >
+                    {getHistoryActionCopy(item.ChangeType).description}
                   </Typography>
                 </Paper>
               ))}

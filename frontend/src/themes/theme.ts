@@ -1,16 +1,16 @@
-import { createTheme } from '@mui/material/styles';
+import { createTheme } from "@mui/material/styles";
 
 const theme = createTheme({
   palette: {
     primary: {
-      main: '#2e0249', // Dark purple — matches sidebar and login branding
+      main: "#2e0249", // Dark purple — matches sidebar and login branding
     },
     secondary: {
-      main: '#3b82f6', // Blue — matches action buttons
+      main: "#3b82f6", // Blue — matches action buttons
     },
     background: {
-      default: '#f8fafc',
-      paper: '#ffffff',
+      default: "#f8fafc",
+      paper: "#ffffff",
     },
   },
   typography: {
@@ -20,17 +20,24 @@ const theme = createTheme({
     borderRadius: 8,
   },
   components: {
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          padding: 24,
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
-          textTransform: 'none', // Prevent uppercase text on buttons
+          textTransform: "none", // Prevent uppercase text on buttons
           fontWeight: 600,
         },
       },
     },
     MuiTextField: {
       defaultProps: {
-        size: 'small',
+        size: "small",
       },
     },
   },

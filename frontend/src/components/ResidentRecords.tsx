@@ -52,12 +52,14 @@ import ResidentProfileModal from "./ResidentProfileModal";
 import { residentService } from "../services/residentService";
 import { householdService } from "../services/householdService";
 import { familyService } from "../services/familyService";
+import { archiveService } from "../services/archiveService";
 import { notify } from "../utils/notify";
 import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 import type {
   ResidentListItem,
   HouseholdListItem,
   FamilyRecord,
+  CreateResidentData,
 } from "../types";
 
 interface ResidentFormData {
@@ -95,6 +97,19 @@ interface ResidentFormData {
   street?: string;
   barangay?: string;
   municipality?: string;
+  categories?: string[];
+  hasEducation?: "yes" | "no";
+  educationLevel?: string;
+  educationStatus?: string;
+  isEmployed?: "yes" | "no";
+  occupation?: string;
+  employmentStatus?: string;
+  isVoter?: "yes" | "no";
+  precinctNumber?: string;
+  householdRole?: "head" | "member";
+  householdHeadId?: string;
+  familyRole?: string;
+  occupancyStatus?: "Owner" | "Renter" | "Sharer" | "Boarder";
 }
 
 // Helper: calculate age from date of birth
@@ -118,6 +133,15 @@ const filterCategories = [
   "OFW",
   "IP",
 ];
+
+const parseResidentCategories = (categories?: string | null): string[] => {
+  if (!categories) return [];
+
+  return categories
+    .split(",")
+    .map((category) => category.trim())
+    .filter(Boolean);
+};
 
 const ResidentRecords: React.FC = () => {
   const { user } = useAuth();
@@ -149,6 +173,7 @@ const ResidentRecords: React.FC = () => {
   const [archiveStatus, setArchiveStatus] = useState<
     "Deceased" | "Moved Out" | null
   >(null);
+  const [archiveDateOfDeath, setArchiveDateOfDeath] = useState("");
   const [preselectedHeadId, setPreselectedHeadId] = useState<
     string | undefined
   >(undefined);
@@ -166,6 +191,8 @@ const ResidentRecords: React.FC = () => {
     useState<HouseholdListItem | null>(null);
   const [familyRecords, setFamilyRecords] = useState<FamilyRecord[]>([]);
   const [isFamilyLoading, setIsFamilyLoading] = useState(false);
+  const [headTransferTarget, setHeadTransferTarget] =
+    useState<FamilyRecord | null>(null);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
@@ -232,12 +259,38 @@ const ResidentRecords: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
+  const handleAddFamilyMemberFromDetail = () => {
+    if (!activeHousehold) {
+      notify.error("No active household selected.");
+      return;
+    }
+
+    const primaryHead = familyRecords.find(
+      (record) =>
+        record.HeadType === "Primary" &&
+        record.RelationshipToFamilyHead === null,
+    );
+
+    if (!primaryHead) {
+      notify.error(
+        "No primary family head found. Assign a primary head before adding members.",
+      );
+      return;
+    }
+
+    handleOpenAddModal(String(primaryHead.ResidentID));
+  };
+
   const handleSaveResident = async (
     rawData: Record<string, string | string[]>,
   ) => {
     const data = rawData as unknown as ResidentFormData;
     try {
       const selectedHouseholdId = (() => {
+        if (data.householdRole === "member" && activeHousehold?.HouseholdID) {
+          return activeHousehold.HouseholdID;
+        }
+
         if (data.householdId !== undefined && data.householdId !== "") {
           const parsed = Number(data.householdId);
           return Number.isFinite(parsed) ? parsed : undefined;
@@ -252,7 +305,7 @@ const ResidentRecords: React.FC = () => {
         return undefined;
       })();
 
-      const payload = {
+      const payload: CreateResidentData = {
         firstName: data.firstName,
         middleName: data.middleName || "",
         lastName: data.lastName,
@@ -272,6 +325,27 @@ const ResidentRecords: React.FC = () => {
           data.mothersMaidenFirstName || data.mothersMaidenNameFirst || "",
         mothersMaidenMiddleName:
           data.mothersMaidenMiddleName || data.mothersMaidenNameMiddle || "",
+        hasEducation: data.hasEducation === "yes" ? "yes" : "no",
+        educationLevel: data.educationLevel || "",
+        educationStatus: data.educationStatus || "",
+        isEmployed: data.isEmployed === "yes" ? "yes" : "no",
+        occupation: data.occupation || "",
+        employmentStatus: data.employmentStatus || "",
+        isVoter: data.isVoter === "yes" ? "yes" : "no",
+        precinctNumber: data.precinctNumber || "",
+        categories: Array.isArray(data.categories) ? data.categories : [],
+        householdRole:
+          data.householdRole === "head" || data.householdRole === "member"
+            ? data.householdRole
+            : undefined,
+        occupancyStatus:
+          data.householdRole === "head" &&
+          (data.occupancyStatus === "Owner" ||
+            data.occupancyStatus === "Renter" ||
+            data.occupancyStatus === "Sharer" ||
+            data.occupancyStatus === "Boarder")
+            ? data.occupancyStatus
+            : undefined,
         householdId: selectedHouseholdId,
         address: {
           unitRoomFloor: data.unitRoomFloor || data.unitRoom || "",
@@ -284,10 +358,70 @@ const ResidentRecords: React.FC = () => {
         },
       };
 
-      await residentService.create(payload);
+      const createResult = await residentService.create(payload);
+
+      if (payload.householdRole === "member") {
+        const relationship = data.familyRole?.trim();
+        const selectedHeadResidentId = Number(
+          preselectedHeadId || data.householdHeadId,
+        );
+
+        if (
+          selectedHouseholdId &&
+          Number.isInteger(selectedHeadResidentId) &&
+          selectedHeadResidentId > 0 &&
+          relationship
+        ) {
+          try {
+            const familyByHousehold =
+              await familyService.getByHousehold(selectedHouseholdId);
+
+            const primaryHeadRecord = familyByHousehold.find(
+              (record) =>
+                record.HeadType === "Primary" &&
+                Number(record.ResidentID) === selectedHeadResidentId,
+            );
+
+            if (primaryHeadRecord) {
+              await familyService.addMember(
+                primaryHeadRecord.FamilyHeadID,
+                createResult.residentId,
+                relationship,
+              );
+            } else {
+              notify.warn(
+                "Resident was added, but automatic family linking could not be completed.",
+              );
+            }
+          } catch {
+            notify.warn(
+              "Resident was added, but automatic family linking could not be completed.",
+            );
+          }
+        } else {
+          notify.warn(
+            "Resident was added, but family-link details were incomplete.",
+          );
+        }
+      }
+
       notify.success("Resident added successfully!");
       await fetchResidents();
+      await fetchHouseholds();
+
+      if (isFamilyDetailOpen && activeHousehold) {
+        try {
+          const records = await familyService.getByHousehold(
+            activeHousehold.HouseholdID,
+          );
+          setFamilyRecords(records);
+        } catch {
+          notify.warn("Resident was added, but family list refresh failed.");
+        }
+      }
+
       setIsAddModalOpen(false);
+      setPreselectedHeadId(undefined);
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -299,15 +433,53 @@ const ResidentRecords: React.FC = () => {
   const handleOpenArchiveDialog = (resident: ResidentListItem) => {
     setResidentToArchive(resident);
     setArchiveStatus(null);
+    setArchiveDateOfDeath("");
     setIsArchiveDialogOpen(true);
   };
 
-  const handleConfirmArchive = () => {
-    if (residentToArchive && archiveStatus) {
-      setResidents(
-        residents.filter((r) => r.ResidentID !== residentToArchive.ResidentID),
+  const handleConfirmArchive = async () => {
+    if (!residentToArchive || !archiveStatus) {
+      return;
+    }
+
+    const normalizedStatus: "MovedOut" | "Deceased" =
+      archiveStatus === "Moved Out" ? "MovedOut" : "Deceased";
+
+    const payload: { status: "MovedOut" | "Deceased"; dateOfDeath?: string } =
+      normalizedStatus === "Deceased"
+        ? {
+            status: normalizedStatus,
+            dateOfDeath: archiveDateOfDeath,
+          }
+        : {
+            status: normalizedStatus,
+          };
+
+    try {
+      const result = await archiveService.archiveResident(
+        residentToArchive.ResidentID,
+        payload,
       );
+
+      notify.success(result.message || "Resident archived successfully.");
       setIsArchiveDialogOpen(false);
+      setArchiveStatus(null);
+      setArchiveDateOfDeath("");
+      setResidentToArchive(null);
+      await fetchResidents();
+      await fetchHouseholds();
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || "Failed to archive resident.";
+
+      if (/household head/i.test(message)) {
+        setIsArchiveDialogOpen(false);
+        setIsHeadWarningOpen(true);
+        return;
+      }
+
+      notify.error(message);
     }
   };
 
@@ -369,8 +541,18 @@ const ResidentRecords: React.FC = () => {
     setFamilyAnchorEl(null);
   };
 
-  const handleSetNewHead = async (_residentId: number) => {
-    if (!activeHousehold) return;
+  const handleSetNewHead = (residentId: number) => {
+    const target = dedupedFamilyRecords.find(
+      (r) => r.ResidentID === residentId,
+    );
+    if (target) {
+      setHeadTransferTarget(target);
+    }
+  };
+
+  const confirmHeadTransfer = async () => {
+    if (!activeHousehold || !headTransferTarget) return;
+    setHeadTransferTarget(null);
 
     // Find the current primary head's FamilyHeadID
     const currentHead = familyRecords.find(
@@ -401,9 +583,14 @@ const ResidentRecords: React.FC = () => {
     }
   };
 
-  // Residents are now fetched from API — no client-side name filtering needed
-  // Category filtering is deferred to a future phase
-  const filteredResidents = residents;
+  const filteredResidents =
+    selectedCategory === "All"
+      ? residents
+      : residents.filter((resident) =>
+          parseResidentCategories(resident.Categories).includes(
+            selectedCategory,
+          ),
+        );
 
   const filteredHouseholds = households.filter(
     (h) =>
@@ -462,9 +649,37 @@ const ResidentRecords: React.FC = () => {
     page * rowsPerPage,
   );
 
+  // Deduplicate by ResidentID — prefer head entries over member entries,
+  // and Primary over Secondary when multiple head rows exist.
+  const dedupedFamilyRecords = useMemo(() => {
+    const map = new Map<number, FamilyRecord>();
+    for (const record of familyRecords) {
+      const existing = map.get(record.ResidentID);
+      if (!existing) {
+        map.set(record.ResidentID, record);
+      } else {
+        // Prefer head entries (RelationshipToFamilyHead === null) over members
+        const existingIsHead = existing.RelationshipToFamilyHead === null;
+        const currentIsHead = record.RelationshipToFamilyHead === null;
+        if (currentIsHead && !existingIsHead) {
+          map.set(record.ResidentID, record);
+        } else if (currentIsHead && existingIsHead) {
+          // Both heads — prefer Primary over Secondary
+          if (
+            record.HeadType === "Primary" &&
+            existing.HeadType !== "Primary"
+          ) {
+            map.set(record.ResidentID, record);
+          }
+        }
+      }
+    }
+    return Array.from(map.values());
+  }, [familyRecords]);
+
   const familyTotalPages = Math.max(
     1,
-    Math.ceil(familyRecords.length / familyRowsPerPage),
+    Math.ceil(dedupedFamilyRecords.length / familyRowsPerPage),
   );
 
   useEffect(() => {
@@ -477,7 +692,7 @@ const ResidentRecords: React.FC = () => {
     }
   }, [familyPage, familyTotalPages]);
 
-  const sortedFamilyRecords = [...familyRecords].sort((a, b) => {
+  const sortedFamilyRecords = [...dedupedFamilyRecords].sort((a, b) => {
     const compareName = `${a.LastName} ${a.FirstName}`.localeCompare(
       `${b.LastName} ${b.FirstName}`,
       undefined,
@@ -832,10 +1047,28 @@ const ResidentRecords: React.FC = () => {
                         <Box
                           sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}
                         >
-                          {/* Category tags - deferred to future phase */}
-                          <Typography variant="caption" color="text.secondary">
-                            —
-                          </Typography>
+                          {parseResidentCategories(resident.Categories).length >
+                          0 ? (
+                            parseResidentCategories(resident.Categories).map(
+                              (category) => (
+                                <Chip
+                                  key={`${resident.ResidentID}-${category}`}
+                                  label={category}
+                                  size="small"
+                                  variant="outlined"
+                                  color="primary"
+                                  sx={{ fontWeight: 600 }}
+                                />
+                              ),
+                            )
+                          ) : (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                            >
+                              -
+                            </Typography>
+                          )}
                         </Box>
                       </TableCell>
                       <TableCell align="center">
@@ -975,7 +1208,10 @@ const ResidentRecords: React.FC = () => {
 
       <AddResidentModal
         open={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
+        onClose={() => {
+          setIsAddModalOpen(false);
+          setPreselectedHeadId(undefined);
+        }}
         onSave={handleSaveResident}
         initialHeadId={preselectedHeadId}
         householdOptions={households.map((h) => ({
@@ -1099,7 +1335,11 @@ const ResidentRecords: React.FC = () => {
       {/* Archive Reason Dialog */}
       <Dialog
         open={isArchiveDialogOpen}
-        onClose={() => setIsArchiveDialogOpen(false)}
+        onClose={() => {
+          setIsArchiveDialogOpen(false);
+          setArchiveStatus(null);
+          setArchiveDateOfDeath("");
+        }}
         PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
       >
         <DialogTitle sx={{ fontWeight: 800 }}>
@@ -1133,13 +1373,35 @@ const ResidentRecords: React.FC = () => {
               Moved Out
             </Button>
           </Box>
+          {archiveStatus === "Deceased" && (
+            <TextField
+              fullWidth
+              label="Date of Death"
+              type="date"
+              value={archiveDateOfDeath}
+              onChange={(e) => setArchiveDateOfDeath(e.target.value)}
+              sx={{ mt: 2 }}
+              InputLabelProps={{ shrink: true }}
+            />
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setIsArchiveDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setIsArchiveDialogOpen(false);
+              setArchiveStatus(null);
+              setArchiveDateOfDeath("");
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             variant="contained"
             color="error"
-            disabled={!archiveStatus}
+            disabled={
+              !archiveStatus ||
+              (archiveStatus === "Deceased" && !archiveDateOfDeath)
+            }
             onClick={handleConfirmArchive}
           >
             Confirm
@@ -1164,7 +1426,7 @@ const ResidentRecords: React.FC = () => {
         ) : (
           <MenuItem onClick={handleViewFamilyDetail} sx={{ py: 1.5 }}>
             <UsersRound size={16} style={{ marginRight: 8 }} />
-            View Family Members ({familyRecords.length} records)
+            View Family Members ({dedupedFamilyRecords.length} records)
           </MenuItem>
         )}
       </Menu>
@@ -1193,6 +1455,21 @@ const ResidentRecords: React.FC = () => {
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<Plus size={16} />}
+              onClick={handleAddFamilyMemberFromDetail}
+              sx={{
+                textTransform: "none",
+                borderRadius: 2,
+                bgcolor: "#2e0249",
+                fontWeight: 700,
+                "&:hover": { bgcolor: "#4a0475" },
+              }}
+            >
+              Add Family Member
+            </Button>
             <IconButton
               onClick={() => setIsFamilyDetailOpen(false)}
               size="small"
@@ -1271,7 +1548,7 @@ const ResidentRecords: React.FC = () => {
                       </TableCell>
                       <TableCell>{calculateAge(m.DateOfBirth)}</TableCell>
                       <TableCell align="center">
-                        {!isHead && familyRecords.length > 1 ? (
+                        {!isPrimary && dedupedFamilyRecords.length > 1 ? (
                           <Tooltip title="Set as Head of Family">
                             <IconButton
                               size="small"
@@ -1288,13 +1565,6 @@ const ResidentRecords: React.FC = () => {
                             sx={{ fontWeight: 800, color: "#92400e" }}
                           >
                             Current Head
-                          </Typography>
-                        ) : isHead ? (
-                          <Typography
-                            variant="caption"
-                            sx={{ fontWeight: 700, color: "#0369a1" }}
-                          >
-                            Secondary Head
                           </Typography>
                         ) : null}
                       </TableCell>
@@ -1330,7 +1600,7 @@ const ResidentRecords: React.FC = () => {
               onChange={(_event, value) => setFamilyPage(value)}
             />
           </Box>
-          {familyRecords.length > 1 && (
+          {dedupedFamilyRecords.length > 1 && (
             <Box
               sx={{ p: 2, bgcolor: "#fffbeb", borderTop: "1px solid #fef3c7" }}
             >
@@ -1350,6 +1620,60 @@ const ResidentRecords: React.FC = () => {
             </Box>
           )}
         </DialogContent>
+      </Dialog>
+
+      {/* Head Transfer Confirmation Dialog */}
+      <Dialog
+        open={Boolean(headTransferTarget)}
+        onClose={() => setHeadTransferTarget(null)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 4 } }}
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 800,
+            display: "flex",
+            alignItems: "center",
+            gap: 1.5,
+            pb: 1,
+          }}
+        >
+          <AlertTriangle size={22} className="text-amber-500" />
+          Confirm Head Transfer
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: "#475569" }}>
+            Are you sure you want to set{" "}
+            <Box component="span" sx={{ fontWeight: 700, color: "#1e293b" }}>
+              {headTransferTarget?.FirstName} {headTransferTarget?.LastName}
+            </Box>{" "}
+            as the new Head of Family? The current head will be demoted to a
+            regular family member.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            onClick={() => setHeadTransferTarget(null)}
+            variant="outlined"
+            sx={{ textTransform: "none", borderRadius: 2, fontWeight: 700 }}
+          >
+            Cancel
+          </Button>
+          <Button
+            onClick={confirmHeadTransfer}
+            variant="contained"
+            sx={{
+              textTransform: "none",
+              borderRadius: 2,
+              fontWeight: 700,
+              bgcolor: "#2e0249",
+              "&:hover": { bgcolor: "#4a0475" },
+            }}
+          >
+            Confirm Transfer
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

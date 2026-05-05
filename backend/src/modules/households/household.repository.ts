@@ -1,5 +1,22 @@
 import { pool } from "../../config/database.js";
 
+const toNumber = (value: unknown): number => {
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+
+  if (typeof value === "number") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  return 0;
+};
+
 export class HouseholdRepository {
   static async createHousehold(data: { addressId: number }) {
     const conn = await pool.getConnection();
@@ -97,9 +114,16 @@ export class HouseholdRepository {
         [householdId],
       );
 
+      const household = householdRows[0];
+
       return {
-        ...householdRows[0],
-        residents,
+        ...household,
+        HouseholdID: toNumber(household.HouseholdID),
+        AddressID: toNumber(household.AddressID),
+        residents: residents.map((resident: any) => ({
+          ...resident,
+          ResidentID: toNumber(resident.ResidentID),
+        })),
       };
     } finally {
       conn.release();
@@ -122,57 +146,70 @@ export class HouseholdRepository {
           AS memberCount FROM Household h
           JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
           JOIN Address a ON h.AddressID = a.AddressID
-          ORDER BY h.HouseholdID`
+          ORDER BY h.HouseholdID`,
       );
 
-      return rows;
+      return rows.map((row: any) => ({
+        ...row,
+        HouseholdID: toNumber(row.HouseholdID),
+        memberCount: toNumber(row.memberCount),
+      }));
     } finally {
       conn.release();
     }
   }
 
-  static async updateHousehold(householdId: number, data: { addressId?: number }) {
+  static async updateHousehold(
+    householdId: number,
+    data: { addressId?: number },
+  ) {
     const conn = await pool.getConnection();
     try {
-        if (data.addressId) {
-            const result = await conn.query(
-                `UPDATE Household SET AddressID = ? WHERE HouseholdID = ?`,
-                [data.addressId, householdId]
-            );
-            return result.affectedRows > 0;
-        }
-        return false;
-    } finally {
-        conn.release();
-    }
-}
-// HouseholdNumber methods
-static async getAllHouseholdNumbers() {
-    const conn = await pool.getConnection();
-    try {
-        const rows = await conn.query(
-            `SELECT HouseID, HouseholdNumberName, Status FROM HouseholdNumber ORDER BY HouseID`
-        );
-        return rows;
-    } finally {
-        conn.release();
-    }
-}
-static async createHouseholdNumber(data: { householdNumberName: string; addressId?: number }) {
-    const conn = await pool.getConnection();
-    try {
+      if (data.addressId) {
         const result = await conn.query(
-            `INSERT INTO HouseholdNumber (HouseholdNumberName, AddressID, Status) VALUES (?, ?, 'Available')`,
-            [data.householdNumberName, data.addressId ?? null]
+          `UPDATE Household SET AddressID = ? WHERE HouseholdID = ?`,
+          [data.addressId, householdId],
         );
-        return Number(result.insertId);
-    } catch (err: any) {
-        if (err.errno === 1062) {
-            throw { status: 409, message: "Household number already exists!" };
-        }
-        throw err;
+        return result.affectedRows > 0;
+      }
+      return false;
     } finally {
-        conn.release();
+      conn.release();
     }
-}
+  }
+  // HouseholdNumber methods
+  static async getAllHouseholdNumbers() {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT HouseID, HouseholdNumberName, Status FROM HouseholdNumber ORDER BY HouseID`,
+      );
+      return rows.map((row: any) => ({
+        ...row,
+        HouseID: toNumber(row.HouseID),
+      }));
+    } finally {
+      conn.release();
+    }
+  }
+  static async createHouseholdNumber(data: {
+    householdNumberName: string;
+    addressId?: number;
+  }) {
+    const conn = await pool.getConnection();
+    try {
+      const result = await conn.query(
+        `INSERT INTO HouseholdNumber (HouseholdNumberName, AddressID, Status) VALUES (?, ?, 'Available')`,
+        [data.householdNumberName, data.addressId ?? null],
+      );
+      return Number(result.insertId);
+    } catch (err: any) {
+      if (err.errno === 1062) {
+        throw { status: 409, message: "Household number already exists!" };
+      }
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
 }

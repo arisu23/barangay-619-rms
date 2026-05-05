@@ -1237,14 +1237,12 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
     const categoriesList = [
       "PWD",
       "Solo Parent",
-      "Senior Citizen",
-      "Indigent",
-      "Pregnant",
-      "Lactating Mother",
-      "OSY (Out of School Youth)",
-      "4Ps Beneficiary",
+      "Pregnant Woman",
+      "OSY",
+      "OSC",
+      "4Ps",
       "OFW",
-      "Indigenous People",
+      "IP",
     ];
 
     return (

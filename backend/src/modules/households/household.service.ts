@@ -3,11 +3,22 @@ import { AuditTrailRepository } from "../audit/audit.repository.js";
 
 export class HouseholdService {
   static async createHousehold(data: any, userId: number) {
-    if (!data.addressId) {
-      throw { status: 400, message: "Address is required!" };
+    const addressId = Number(data?.addressId);
+
+    if (!Number.isInteger(addressId) || addressId <= 0) {
+      throw { status: 400, message: "Valid addressId is required!" };
     }
 
-    const householdId = await HouseholdRepository.createHousehold(data);
+    let householdId: number;
+    try {
+      householdId = await HouseholdRepository.createHousehold({ addressId });
+    } catch (error: any) {
+      if (error?.errno === 1452 || error?.code === "ER_NO_REFERENCED_ROW_2") {
+        throw { status: 400, message: "Invalid addressId!" };
+      }
+
+      throw error;
+    }
 
     await AuditTrailRepository.log({
       userId,
@@ -64,7 +75,10 @@ export class HouseholdService {
     if (!existing) {
       throw { status: 404, message: "Household not found!" };
     }
-    const updated = await HouseholdRepository.updateHousehold(householdId, data);
+    const updated = await HouseholdRepository.updateHousehold(
+      householdId,
+      data,
+    );
     if (!updated) {
       throw { status: 400, message: "No changes applied!" };
     }
@@ -72,7 +86,7 @@ export class HouseholdService {
       userId,
       action: "UPDATE_HOUSEHOLD",
       oldValue: JSON.stringify({ householdId }),
-      newValue: JSON.stringify(data)
+      newValue: JSON.stringify(data),
     });
     return true;
   }
@@ -80,8 +94,11 @@ export class HouseholdService {
   static async getAllHouseholdNumbers() {
     return HouseholdRepository.getAllHouseholdNumbers();
   }
-  
-  static async createHouseholdNumber(data: { householdNumberName: string; addressId?: number }, userId: number) {
+
+  static async createHouseholdNumber(
+    data: { householdNumberName: string; addressId?: number },
+    userId: number,
+  ) {
     if (!data.householdNumberName) {
       throw { status: 400, message: "Household number name is required!" };
     }
@@ -89,7 +106,7 @@ export class HouseholdService {
     await AuditTrailRepository.log({
       userId,
       action: "CREATE_HOUSEHOLD_NUMBER",
-      newValue: JSON.stringify({ houseId, ...data })
+      newValue: JSON.stringify({ houseId, ...data }),
     });
     return houseId;
   }

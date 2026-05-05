@@ -1,5 +1,5 @@
 import type { Request, Response, NextFunction } from "express";
-import { ReportService } from "./report.service.js";
+import { ReportService, type FormAExportFormat } from "./report.service.js";
 import { ReportRepository } from "./report.repository.js";
 import { ProfilePdfService } from "./profile-pdf.service.js";
 
@@ -47,12 +47,73 @@ export class ReportController {
   //GET /api/reports/rbi/form-a - Form A data
   static async getFormAData(req: Request, res: Response, next: NextFunction) {
     try {
-      const householdId = req.query.householdId
-        ? Number(req.query.householdId)
-        : undefined;
+      const rawHouseholdId = req.query.householdId;
+      let householdId: number | undefined;
 
-      const data = await ReportService.getFormAData(householdId);
+      if (rawHouseholdId !== undefined) {
+        const parsedHouseholdId = Number(rawHouseholdId);
+        if (!Number.isFinite(parsedHouseholdId) || parsedHouseholdId <= 0) {
+          throw { status: 400, message: "Invalid householdId parameter." };
+        }
+        householdId = Math.floor(parsedHouseholdId);
+      }
+
+      const rawPage = Number(req.query.page);
+      const rawLimit = Number(req.query.limit);
+      const page = Number.isFinite(rawPage) && rawPage > 0 ? rawPage : 1;
+      const limit = Number.isFinite(rawLimit) && rawLimit > 0 ? rawLimit : 25;
+
+      const data = await ReportService.getFormAData(householdId, page, limit);
       res.json({ success: true, data });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  //GET /api/reports/rbi/form-a/export - Export Form A as CSV/XLSX/PDF
+  static async exportFormA(req: Request, res: Response, next: NextFunction) {
+    try {
+      const rawFormat = String(req.query.format || "")
+        .trim()
+        .toLowerCase();
+
+      if (rawFormat !== "csv" && rawFormat !== "xlsx" && rawFormat !== "pdf") {
+        throw {
+          status: 400,
+          message: "Invalid format. Supported values are csv, xlsx, and pdf.",
+        };
+      }
+
+      const format = rawFormat as FormAExportFormat;
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+
+      const rawHouseholdId = req.query.householdId;
+      let householdId: number | undefined;
+
+      if (rawHouseholdId !== undefined) {
+        const parsedHouseholdId = Number(rawHouseholdId);
+        if (!Number.isFinite(parsedHouseholdId) || parsedHouseholdId <= 0) {
+          throw { status: 400, message: "Invalid householdId parameter." };
+        }
+        householdId = Math.floor(parsedHouseholdId);
+      }
+
+      const exportResult = householdId
+        ? await ReportService.exportFormA(format, userId, householdId)
+        : await ReportService.exportFormA(format, userId);
+
+      res.setHeader("Content-Type", exportResult.contentType);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${exportResult.fileName}"`,
+      );
+      res.setHeader("Content-Length", String(exportResult.buffer.length));
+      res.send(exportResult.buffer);
     } catch (error) {
       next(error);
     }

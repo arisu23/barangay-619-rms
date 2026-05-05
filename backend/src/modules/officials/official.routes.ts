@@ -8,19 +8,24 @@ const router = Router();
 //All routes require authentication
 router.use(authenticate);
 
-//UC11 – Admin only for management
-router.use(authorizeRole("Admin"));
-
 //GET /api/officials - List all officials
-router.get("/", OfficialController.getAllOfficials);
+router.get(
+  "/",
+  authorizeRole("Admin", "Staff"),
+  OfficialController.getAllOfficials,
+);
 
 //GET /api/officials/:id - Get official by ID
-router.get("/:id", OfficialController.getOfficialById);
+router.get(
+  "/:id",
+  authorizeRole("Admin", "Staff"),
+  OfficialController.getOfficialById,
+);
 
 //POST /api/officials - Add official
-router.post("/", OfficialController.addOfficial);
+router.post("/", authorizeRole("Admin"), OfficialController.addOfficial);
 
 //PUT /api/officials/:id - Update official
-router.put("/:id", OfficialController.updateOfficial);
+router.put("/:id", authorizeRole("Admin"), OfficialController.updateOfficial);
 
 export default router;

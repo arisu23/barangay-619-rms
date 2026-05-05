@@ -71,3 +71,4 @@ task-status.md
 qa
 playwright.config.ts
 e2e
+test-results
