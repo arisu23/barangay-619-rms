@@ -1446,6 +1446,9 @@ const ResidentRecords: React.FC = () => {
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
+            px: 3,
+            py: 2,
+            bgcolor: "white",
           }}
         >
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
@@ -1462,9 +1465,12 @@ const ResidentRecords: React.FC = () => {
               onClick={handleAddFamilyMemberFromDetail}
               sx={{
                 textTransform: "none",
-                borderRadius: 2,
+                borderRadius: 999,
                 bgcolor: "#2e0249",
                 fontWeight: 700,
+                px: 2.5,
+                py: 0.75,
+                boxShadow: "0 6px 14px rgba(46, 2, 73, 0.18)",
                 "&:hover": { bgcolor: "#4a0475" },
               }}
             >
@@ -1478,131 +1484,179 @@ const ResidentRecords: React.FC = () => {
             </IconButton>
           </Stack>
         </DialogTitle>
-        <DialogContent sx={{ p: 0 }}>
-          <TableContainer sx={{ maxHeight: "60vh" }}>
-            <Table stickyHeader sx={{ tableLayout: "fixed", minWidth: 760 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell
-                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "38%" }}
-                  >
-                    NAME
-                  </TableCell>
-                  <TableCell
-                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "22%" }}
-                  >
-                    ROLE
-                  </TableCell>
-                  <TableCell
-                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "14%" }}
-                  >
-                    AGE
-                  </TableCell>
-                  <TableCell
-                    align="center"
-                    sx={{ fontWeight: 800, bgcolor: "#f8fafc", width: "26%" }}
-                  >
-                    ACTIONS
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {paginatedFamilyRecords.map((m) => {
-                  const role =
-                    m.RelationshipToFamilyHead === null
-                      ? `Head (${m.HeadType})`
-                      : m.RelationshipToFamilyHead;
-                  const isHead = m.RelationshipToFamilyHead === null;
-                  const isPrimary = isHead && m.HeadType === "Primary";
-                  return (
-                    <TableRow key={`${m.FamilyHeadID}-${m.ResidentID}`} hover>
-                      <TableCell sx={{ fontWeight: 600, color: "#1e293b" }}>
-                        <Box
-                          sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                        >
-                          {isPrimary && (
-                            <Crown size={14} className="text-amber-500" />
-                          )}
-                          {m.FirstName} {m.LastName}
-                        </Box>
+        <DialogContent sx={{ p: 0, bgcolor: "#f8fafc" }}>
+          <Box sx={{ p: 3, pt: 2 }}>
+            <Box
+              sx={{
+                border: "1px solid #e2e8f0",
+                borderRadius: 2,
+                overflow: "hidden",
+                bgcolor: "white",
+              }}
+            >
+              <TableContainer sx={{ maxHeight: "55vh" }}>
+                <Table
+                  stickyHeader
+                  sx={{ tableLayout: "fixed", minWidth: 760 }}
+                >
+                  <TableHead>
+                    <TableRow>
+                      <TableCell
+                        sx={{
+                          fontWeight: 800,
+                          bgcolor: "#f8fafc",
+                          width: "38%",
+                        }}
+                      >
+                        NAME
                       </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={role}
-                          size="small"
-                          sx={{
-                            fontWeight: 700,
-                            fontSize: "0.7rem",
-                            bgcolor: isPrimary
-                              ? "#fef3c7"
-                              : isHead
-                                ? "#e0f2fe"
-                                : "#f3f4f6",
-                            color: isPrimary
-                              ? "#92400e"
-                              : isHead
-                                ? "#0369a1"
-                                : "#64748b",
-                          }}
-                        />
+                      <TableCell
+                        sx={{
+                          fontWeight: 800,
+                          bgcolor: "#f8fafc",
+                          width: "22%",
+                        }}
+                      >
+                        ROLE
                       </TableCell>
-                      <TableCell>{calculateAge(m.DateOfBirth)}</TableCell>
-                      <TableCell align="center">
-                        {!isPrimary && dedupedFamilyRecords.length > 1 ? (
-                          <Tooltip title="Set as Head of Family">
-                            <IconButton
-                              size="small"
-                              color="primary"
-                              onClick={() => handleSetNewHead(m.ResidentID)}
-                              sx={{ "&:hover": { bgcolor: "#eff6ff" } }}
-                            >
-                              <UserCheck size={18} />
-                            </IconButton>
-                          </Tooltip>
-                        ) : isPrimary ? (
-                          <Typography
-                            variant="caption"
-                            sx={{ fontWeight: 800, color: "#92400e" }}
-                          >
-                            Current Head
-                          </Typography>
-                        ) : null}
+                      <TableCell
+                        sx={{
+                          fontWeight: 800,
+                          bgcolor: "#f8fafc",
+                          width: "14%",
+                        }}
+                      >
+                        AGE
+                      </TableCell>
+                      <TableCell
+                        align="center"
+                        sx={{
+                          fontWeight: 800,
+                          bgcolor: "#f8fafc",
+                          width: "26%",
+                        }}
+                      >
+                        ACTIONS
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: 2,
-              flexWrap: "wrap",
-              p: 2,
-              borderTop: "1px solid #f3f4f6",
-            }}
-          >
-            <SortOrderToggle
-              order={familySortOrder}
-              onToggle={() =>
-                setFamilySortOrder((prev) => (prev === "asc" ? "desc" : "asc"))
-              }
-              label="Sort"
-            />
-            <Pagination
-              count={familyTotalPages}
-              color="primary"
-              shape="rounded"
-              page={familyPage}
-              onChange={(_event, value) => setFamilyPage(value)}
-            />
+                  </TableHead>
+                  <TableBody>
+                    {paginatedFamilyRecords.map((m) => {
+                      const role =
+                        m.RelationshipToFamilyHead === null
+                          ? `Head (${m.HeadType})`
+                          : m.RelationshipToFamilyHead;
+                      const isHead = m.RelationshipToFamilyHead === null;
+                      const isPrimary = isHead && m.HeadType === "Primary";
+                      return (
+                        <TableRow
+                          key={`${m.FamilyHeadID}-${m.ResidentID}`}
+                          hover
+                        >
+                          <TableCell sx={{ fontWeight: 600, color: "#1e293b" }}>
+                            <Box
+                              sx={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 1,
+                              }}
+                            >
+                              {isPrimary && (
+                                <Crown size={14} className="text-amber-500" />
+                              )}
+                              {m.FirstName} {m.LastName}
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={role}
+                              size="small"
+                              sx={{
+                                fontWeight: 700,
+                                fontSize: "0.7rem",
+                                bgcolor: isPrimary
+                                  ? "#fef3c7"
+                                  : isHead
+                                    ? "#e0f2fe"
+                                    : "#f3f4f6",
+                                color: isPrimary
+                                  ? "#92400e"
+                                  : isHead
+                                    ? "#0369a1"
+                                    : "#64748b",
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>{calculateAge(m.DateOfBirth)}</TableCell>
+                          <TableCell align="center">
+                            {!isPrimary && dedupedFamilyRecords.length > 1 ? (
+                              <Tooltip title="Set as Head of Family">
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => handleSetNewHead(m.ResidentID)}
+                                  sx={{ "&:hover": { bgcolor: "#eff6ff" } }}
+                                >
+                                  <UserCheck size={18} />
+                                </IconButton>
+                              </Tooltip>
+                            ) : isPrimary ? (
+                              <Typography
+                                variant="caption"
+                                sx={{ fontWeight: 800, color: "#92400e" }}
+                              >
+                                Current Head
+                              </Typography>
+                            ) : null}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Box
+                sx={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 2,
+                  flexWrap: "wrap",
+                  px: 2,
+                  py: 1.5,
+                  borderTop: "1px solid #f1f5f9",
+                  bgcolor: "#f8fafc",
+                }}
+              >
+                <SortOrderToggle
+                  order={familySortOrder}
+                  onToggle={() =>
+                    setFamilySortOrder((prev) =>
+                      prev === "asc" ? "desc" : "asc",
+                    )
+                  }
+                  label="Sort"
+                />
+                <Pagination
+                  count={familyTotalPages}
+                  color="primary"
+                  shape="rounded"
+                  page={familyPage}
+                  onChange={(_event, value) => setFamilyPage(value)}
+                />
+              </Box>
+            </Box>
           </Box>
           {dedupedFamilyRecords.length > 1 && (
             <Box
-              sx={{ p: 2, bgcolor: "#fffbeb", borderTop: "1px solid #fef3c7" }}
+              sx={{
+                mx: 3,
+                mb: 3,
+                p: 2,
+                bgcolor: "#fffbeb",
+                borderRadius: 2,
+                border: "1px solid #fef3c7",
+              }}
             >
               <Typography
                 variant="caption"

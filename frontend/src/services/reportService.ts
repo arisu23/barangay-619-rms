@@ -92,9 +92,15 @@ export const reportService = {
 
   async exportFormA(
     format: ReportFormAExportFormat,
+    householdId?: number,
   ): Promise<{ blob: Blob; fileName: string }> {
+    const params: Record<string, string | number> = { format };
+    if (householdId !== undefined) {
+      params.householdId = householdId;
+    }
+
     const response = await api.get("/reports/rbi/form-a/export", {
-      params: { format },
+      params,
       responseType: "blob",
     });
 

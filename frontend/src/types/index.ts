@@ -218,7 +218,7 @@ export interface Official {
   LastName: string;
   Position: string;
   TermStart?: string;
-  TermEnd?: string;
+  TermEnd?: string | null;
   BStatus?: string;
 }
 

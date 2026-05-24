@@ -58,7 +58,7 @@ const formatDate = (value: string | Date | null | undefined): string => {
     return toSafeCell(value);
   }
 
-  return date.toLocaleDateString("en-PH", {
+  return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "2-digit",
     day: "2-digit",

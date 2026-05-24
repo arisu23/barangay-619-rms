@@ -1,4 +1,8 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { useBarangayLogo } from "../hooks/useBarangayLogo";
+import { householdService } from "../services/householdService";
+import { officialService } from "../services/officialService";
+import type { HouseholdListItem, Official } from "../types";
 import {
   Box,
   Paper,
@@ -79,6 +83,8 @@ import type {
   ReportFormAExportFormat,
   ReportFormCData,
 } from "../types";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 
 const Transition = React.forwardRef(function Transition(
   props: TransitionProps & {
@@ -188,14 +194,51 @@ const COLORS = [
   "#6366f1",
 ];
 
+const buildDateToken = (value: Date = new Date()): string =>
+  value.toISOString().slice(0, 10);
+
+const sanitizeFilenamePart = (value: string): string =>
+  value
+    .replace(/[\\/:*?"<>|]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const joinFilenameParts = (parts: Array<string | null | undefined>): string =>
+  parts
+    .map((part) => (part ? sanitizeFilenamePart(part) : ""))
+    .filter(Boolean)
+    .join(" - ");
+
+const buildFilename = (
+  parts: Array<string | null | undefined>,
+  extension: string,
+): string => `${joinFilenameParts(parts)}.${extension}`;
+
+const formatDateMMDDYYYY = (value: string) => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  });
+};
+
 // --- Form Preview Components ---
 
 const FormA_Preview = ({
   residents,
   totalResidents,
+  householdName,
+  barangaySecretaryName,
+  punongBarangayName,
 }: {
   residents: ResidentRecord[];
   totalResidents: number;
+  householdName: string;
+  barangaySecretaryName: string;
+  punongBarangayName: string;
 }) => (
   <Box
     sx={{
@@ -385,7 +428,7 @@ const FormA_Preview = ({
                 {r.pob}
               </TableCell>
               <TableCell sx={{ border: "1px solid #e2e8f0" }}>
-                {r.dob}
+                {formatDateMMDDYYYY(r.dob)}
               </TableCell>
               <TableCell sx={{ border: "1px solid #e2e8f0" }}>
                 {r.age}
@@ -413,15 +456,21 @@ const FormA_Preview = ({
 
     <Box sx={{ mt: 8, display: "flex", justifyContent: "space-between" }}>
       <Box sx={{ textAlign: "center", width: 200 }}>
+        <Typography variant="body2" sx={{ fontWeight: 700, minHeight: 18 }}>
+          {householdName}
+        </Typography>
         <Typography
           variant="caption"
           display="block"
           sx={{ borderTop: "1px solid black", pt: 0.5 }}
         >
-          Name of Household/Head Member
+          Name of Household
         </Typography>
       </Box>
       <Box sx={{ textAlign: "center", width: 200 }}>
+        <Typography variant="body2" sx={{ fontWeight: 700, minHeight: 18 }}>
+          {barangaySecretaryName}
+        </Typography>
         <Typography
           variant="caption"
           display="block"
@@ -431,6 +480,9 @@ const FormA_Preview = ({
         </Typography>
       </Box>
       <Box sx={{ textAlign: "center", width: 200 }}>
+        <Typography variant="body2" sx={{ fontWeight: 700, minHeight: 18 }}>
+          {punongBarangayName}
+        </Typography>
         <Typography
           variant="caption"
           display="block"
@@ -446,9 +498,17 @@ const FormA_Preview = ({
 const FormC_Preview = ({
   residents,
   formCData,
+  isPdfExport,
+  sectorHeaderRef,
+  barangaySecretaryName,
+  punongBarangayName,
 }: {
   residents: ResidentRecord[];
   formCData?: ReportFormCData | null;
+  isPdfExport?: boolean;
+  sectorHeaderRef?: React.RefObject<HTMLTableRowElement>;
+  barangaySecretaryName: string;
+  punongBarangayName: string;
 }) => {
   const getBracketCount = (
     label: string,
@@ -537,10 +597,11 @@ const FormC_Preview = ({
       sx={{
         bgcolor: "white",
         p: 6,
-        height: "11in",
+        minHeight: "11in",
+        height: isPdfExport ? "auto" : "auto",
         border: "1px solid #e2e8f0",
         boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
-        overflow: "hidden",
+        overflow: isPdfExport ? "visible" : "visible",
       }}
     >
       <Typography variant="caption" sx={{ fontWeight: "bold" }}>
@@ -690,7 +751,7 @@ const FormC_Preview = ({
                 <TableCell sx={{ border: "1px solid #e2e8f0" }}></TableCell>
               </TableRow>
             ))}
-            <TableRow sx={{ bgcolor: "#dcfce7" }}>
+            <TableRow ref={sectorHeaderRef} sx={{ bgcolor: "#dcfce7" }}>
               <TableCell
                 colSpan={5}
                 sx={{
@@ -819,7 +880,7 @@ const FormC_Preview = ({
             }}
           >
             <Typography variant="body2" sx={{ fontWeight: "bold" }}>
-              Hon. Reynaldo T. Maca
+              {barangaySecretaryName}
             </Typography>
             <Typography variant="caption" display="block">
               Barangay Secretary
@@ -839,7 +900,7 @@ const FormC_Preview = ({
             }}
           >
             <Typography variant="body2" sx={{ fontWeight: "bold" }}>
-              Hon. Michael King Cajucom
+              {punongBarangayName}
             </Typography>
             <Typography variant="caption" display="block">
               Punong Barangay
@@ -853,114 +914,146 @@ const FormC_Preview = ({
 
 const Certification_Preview = ({
   inhabitantsCount,
+  isPdfExport,
+  punongBarangayName,
 }: {
   inhabitantsCount: number;
-}) => (
-  <Box
-    sx={{
-      bgcolor: "white",
-      p: 10,
-      height: "11in",
-      border: "1px solid #e2e8f0",
-      boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
-      display: "flex",
-      flexDirection: "column",
-      overflow: "hidden",
-    }}
-  >
-    <Box sx={{ textAlign: "center", mb: 4 }}>
-      <Box
-        sx={{
-          width: 100,
-          height: 100,
-          border: "2px solid #ccc",
-          borderRadius: "50%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          mx: "auto",
-          mb: 2,
-          fontSize: "12px",
-          textAlign: "center",
-          color: "#666",
-          fontWeight: "bold",
-          textTransform: "uppercase",
-        }}
-      >
-        BARANGAY
-        <br />
-        LOGO
-      </Box>
-      <Typography variant="body1" sx={{ fontWeight: 800 }}>
-        Barangay 619, Zone 62, District VI
-      </Typography>
-      <Typography variant="body1" sx={{ fontWeight: 800 }}>
-        City of Manila
-      </Typography>
-    </Box>
+  isPdfExport?: boolean;
+  punongBarangayName: string;
+}) => {
+  const { logoSrc } = useBarangayLogo();
 
-    <Typography
-      variant="h4"
-      align="center"
-      sx={{ fontWeight: 900, mt: 4, mb: 10, letterSpacing: "0.1em" }}
+  return (
+    <Box
+      sx={{
+        bgcolor: "white",
+        p: 10,
+        height: isPdfExport ? "auto" : "11in",
+        border: "1px solid #e2e8f0",
+        boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: isPdfExport ? "visible" : "hidden",
+      }}
     >
-      CERTIFICATION
-    </Typography>
-
-    <Box sx={{ px: 4, mt: 4 }}>
-      <Typography
-        variant="body1"
-        paragraph
-        sx={{
-          textAlign: "justify",
-          lineHeight: 2,
-          textIndent: "40px",
-          fontSize: "1.1rem",
-        }}
-      >
-        This is to certify that Barangay <strong>619</strong>, Zone{" "}
-        <strong>62</strong>, District <strong>VI</strong>, Manila has a total of
-        <strong> {inhabitantsCount.toLocaleString()}</strong> registered
-        barangay inhabitants for the <strong>2nd</strong> quarter of{" "}
-        <strong>2025</strong> pursuant to DILG Memorandum Circular 2008-144 re:
-        Reiteration of Memorandum Circular No. 2005-69 dated July 21 2005 re:
-        Maintenance and Updating of all Inhabitants of the Barangay.
-      </Typography>
-
-      <Typography
-        variant="body1"
-        sx={{ mt: 6, lineHeight: 2, textIndent: "40px", fontSize: "1.1rem" }}
-      >
-        Issued this <strong>{new Date().getDate()}th</strong> day of{" "}
-        <strong>
-          {new Date().toLocaleString("default", { month: "long" })}
-        </strong>
-        , <strong>{new Date().getFullYear()}</strong> at the{" "}
-        <u>address of the Barangay Hall</u>.
-      </Typography>
-    </Box>
-
-    <Box sx={{ mt: 15, display: "flex", justifyContent: "flex-end", pr: 4 }}>
-      <Box sx={{ textAlign: "center", width: 350 }}>
-        <Box sx={{ borderTop: "2px solid black", mt: 1 }} />
-        <Typography variant="h6" sx={{ fontWeight: "bold", mt: 0.5 }}>
-          Punong Barangay
+      <Box sx={{ textAlign: "center", mb: 4 }}>
+        {logoSrc ? (
+          <Box
+            component="img"
+            src={logoSrc}
+            alt="Barangay Logo"
+            sx={{
+              width: 100,
+              height: 100,
+              objectFit: "contain",
+              mx: "auto",
+              mb: 2,
+              borderRadius: "50%",
+            }}
+          />
+        ) : (
+          <Box
+            sx={{
+              width: 100,
+              height: 100,
+              border: "2px solid #ccc",
+              borderRadius: "50%",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              mx: "auto",
+              mb: 2,
+              fontSize: "12px",
+              textAlign: "center",
+              color: "#666",
+              fontWeight: "bold",
+              textTransform: "uppercase",
+            }}
+          >
+            BARANGAY
+            <br />
+            LOGO
+          </Box>
+        )}
+        <Typography variant="body1" sx={{ fontWeight: 800 }}>
+          Barangay 619, Zone 62, District VI
+        </Typography>
+        <Typography variant="body1" sx={{ fontWeight: 800 }}>
+          City of Manila
         </Typography>
       </Box>
+
+      <Typography
+        variant="h4"
+        align="center"
+        sx={{ fontWeight: 900, mt: 4, mb: 10, letterSpacing: "0.1em" }}
+      >
+        CERTIFICATION
+      </Typography>
+
+      <Box sx={{ px: 4, mt: 4 }}>
+        <Typography
+          variant="body1"
+          paragraph
+          sx={{
+            textAlign: "justify",
+            lineHeight: 2,
+            textIndent: "40px",
+            fontSize: "1.1rem",
+          }}
+        >
+          This is to certify that Barangay <strong>619</strong>, Zone{" "}
+          <strong>62</strong>, District <strong>VI</strong>, Manila has a total
+          of
+          <strong> {inhabitantsCount.toLocaleString()}</strong> registered
+          barangay inhabitants for the <strong>2nd</strong> quarter of{" "}
+          <strong>2025</strong> pursuant to DILG Memorandum Circular 2008-144
+          re: Reiteration of Memorandum Circular No. 2005-69 dated July 21 2005
+          re: Maintenance and Updating of all Inhabitants of the Barangay.
+        </Typography>
+
+        <Typography
+          variant="body1"
+          sx={{ mt: 6, lineHeight: 2, textIndent: "40px", fontSize: "1.1rem" }}
+        >
+          Issued this <strong>{new Date().getDate()}th</strong> day of{" "}
+          <strong>
+            {new Date().toLocaleString("default", { month: "long" })}
+          </strong>
+          , <strong>{new Date().getFullYear()}</strong> at the{" "}
+          <u>address of the Barangay Hall</u>.
+        </Typography>
+      </Box>
+
+      <Box sx={{ mt: 15, display: "flex", justifyContent: "flex-end", pr: 4 }}>
+        <Box sx={{ textAlign: "center", width: 350 }}>
+          <Box sx={{ borderTop: "2px solid black", mt: 1 }} />
+          <Typography variant="h6" sx={{ fontWeight: "bold", mt: 0.5 }}>
+            {punongBarangayName}
+          </Typography>
+          <Typography variant="body2" sx={{ mt: 0.5 }}>
+            Punong Barangay
+          </Typography>
+        </Box>
+      </Box>
     </Box>
-  </Box>
-);
+  );
+};
 
 interface DetailedReportDialogProps {
   open: boolean;
   onClose: () => void;
   category: ReportCategory | null;
+  yearFilter: string;
+  semesterFilter: string;
 }
 
 const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
   open,
   onClose,
   category,
+  yearFilter,
+  semesterFilter,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -1055,6 +1148,11 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
         resident.Street ?? "",
       ]);
 
+      const periodLabel = `${semesterFilter} ${yearFilter}`;
+      const filename = buildFilename(
+        ["Demographics", category.label, periodLabel, buildDateToken()],
+        "csv",
+      );
       const csvContent =
         "data:text/csv;charset=utf-8," +
         headers.join(",") +
@@ -1064,10 +1162,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement("a");
       link.setAttribute("href", encodedUri);
-      link.setAttribute(
-        "download",
-        `${category.label.replace(/\s+/g, "_")}_Breakdown.csv`,
-      );
+      link.setAttribute("download", filename);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1075,11 +1170,6 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
     } catch {
       notify.error("Failed to export CSV.");
     }
-  };
-
-  const handleExportPDF = () => {
-    notify.info("Opening print view...");
-    window.print();
   };
 
   const handleDownloadResidentPdf = async (
@@ -1090,9 +1180,13 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
     try {
       const blob = await reportService.downloadResidentPdf(residentId);
       const fileUrl = URL.createObjectURL(blob);
+      const filename = buildFilename(
+        ["Resident Profile", `${lastName} ${firstName}`, buildDateToken()],
+        "pdf",
+      );
       const link = document.createElement("a");
       link.href = fileUrl;
-      link.download = `${lastName}_${firstName}_Profile.pdf`;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1164,21 +1258,7 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
                   fontWeight: 700,
                 }}
               >
-                Export CSV
-              </Button>
-              <Button
-                variant="contained"
-                startIcon={<Printer size={18} />}
-                onClick={handleExportPDF}
-                sx={{
-                  borderRadius: 2.5,
-                  textTransform: "none",
-                  fontWeight: 700,
-                  bgcolor: category.color,
-                  "&:hover": { bgcolor: category.color, opacity: 0.9 },
-                }}
-              >
-                Print PDF
+                Download CSV
               </Button>
             </Stack>
           </Toolbar>
@@ -1464,7 +1544,8 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
 
 const Reports: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
-  const [yearFilter, setYearFilter] = useState("2025");
+  const currentYear = new Date().getFullYear();
+  const [yearFilter, setYearFilter] = useState(String(currentYear));
   const [semesterFilter, setSemesterFilter] = useState("2nd Semester");
   const [rbiTemplate, setRbiTemplate] = useState("Form A");
   const [selectedReport, setSelectedReport] = useState<ReportCategory | null>(
@@ -1484,6 +1565,14 @@ const Reports: React.FC = () => {
   const [isFormAPreviewLoading, setIsFormAPreviewLoading] = useState(false);
   const [formAExportingFormat, setFormAExportingFormat] =
     useState<ReportFormAExportFormat | null>(null);
+  const [isTemplatePdfExporting, setIsTemplatePdfExporting] = useState(false);
+  const [households, setHouseholds] = useState<HouseholdListItem[]>([]);
+  const [officials, setOfficials] = useState<Official[]>([]);
+  const [selectedHouseholdId, setSelectedHouseholdId] = useState<
+    number | undefined
+  >(undefined);
+  const rbiPreviewRef = useRef<HTMLDivElement | null>(null);
+  const formCSectorHeaderRef = useRef<HTMLTableRowElement>(null!);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -1517,6 +1606,7 @@ const Reports: React.FC = () => {
     setIsFormAPreviewLoading(true);
     try {
       const response = await reportService.getFormAPreview({
+        householdId: selectedHouseholdId,
         page: formAPreviewPage,
         limit: formAPreviewRowsPerPage,
       });
@@ -1535,16 +1625,33 @@ const Reports: React.FC = () => {
     } finally {
       setIsFormAPreviewLoading(false);
     }
-  }, [formAPreviewPage, formAPreviewRowsPerPage]);
+  }, [formAPreviewPage, formAPreviewRowsPerPage, selectedHouseholdId]);
 
   useEffect(() => {
     fetchDemographics();
     fetchFormCData();
+    householdService
+      .getAll()
+      .then(setHouseholds)
+      .catch(() => {});
+    officialService
+      .getAll()
+      .then(setOfficials)
+      .catch(() => {
+        notify.error("Failed to load barangay officials.");
+      });
   }, [fetchDemographics, fetchFormCData]);
 
   useEffect(() => {
     fetchFormAPreview();
   }, [fetchFormAPreview]);
+
+  const startYear = 2026;
+  const endYear = currentYear;
+  const yearOptions = Array.from(
+    { length: endYear - startYear + 1 },
+    (_value, index) => String(endYear - index),
+  );
 
   const stats = [
     {
@@ -1645,12 +1752,29 @@ const Reports: React.FC = () => {
     notify.info(`Preparing Form A ${formatLabel} export...`);
 
     try {
-      const { blob, fileName } = await reportService.exportFormA(format);
+      const { blob } = await reportService.exportFormA(
+        format,
+        selectedHouseholdId,
+      );
+
+      const selectedHousehold = households.find(
+        (household) => household.HouseholdID === selectedHouseholdId,
+      );
+      const householdLabel = selectedHouseholdId
+        ? selectedHousehold?.householdNumber
+          ? `Household ${selectedHousehold.householdNumber}`
+          : `Household ${selectedHouseholdId}`
+        : "All Households";
+      const periodLabel = `${semesterFilter} ${yearFilter}`;
+      const filename = buildFilename(
+        ["RBI Form A", periodLabel, householdLabel, buildDateToken()],
+        format,
+      );
 
       const fileUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = fileUrl;
-      link.download = fileName;
+      link.download = filename;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -1664,6 +1788,186 @@ const Reports: React.FC = () => {
     }
   };
 
+  const handleTemplatePdfDownload = async () => {
+    if (rbiTemplate === "Form A") {
+      await handleFormAExport("pdf");
+      return;
+    }
+
+    if (!rbiPreviewRef.current) {
+      notify.error("Preview is not ready for export.");
+      return;
+    }
+
+    const periodLabel = `${semesterFilter} ${yearFilter}`;
+    const filename = buildFilename(
+      [
+        rbiTemplate === "Form C" ? "RBI Form C" : "Barangay Certification",
+        periodLabel,
+        buildDateToken(),
+      ],
+      "pdf",
+    );
+
+    notify.info("Preparing PDF export...");
+    setIsTemplatePdfExporting(true);
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+
+    const previewElement = rbiPreviewRef.current;
+    const prevTransform = previewElement.style.transform;
+    const prevTransformOrigin = previewElement.style.transformOrigin;
+    const prevWidth = previewElement.style.width;
+    const prevMaxWidth = previewElement.style.maxWidth;
+    const prevHeight = previewElement.style.height;
+    const prevMaxHeight = previewElement.style.maxHeight;
+    const prevOverflow = previewElement.style.overflow;
+    const prevZoom = previewElement.style.zoom;
+
+    previewElement.style.transform = "none";
+    previewElement.style.transformOrigin = "top left";
+    previewElement.style.width = "8.5in";
+    previewElement.style.maxWidth = "8.5in";
+    previewElement.style.height = "auto";
+    previewElement.style.maxHeight = "none";
+    previewElement.style.overflow = "visible";
+    previewElement.style.zoom = "1";
+
+    try {
+      const canvas = await html2canvas(previewElement, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+      const imgData = canvas.toDataURL("image/jpeg", 0.98);
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "in",
+        format: rbiTemplate === "Form C" ? [8.5, 13] : "letter",
+      });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgProps = pdf.getImageProperties(imgData);
+      const imgWidth = pageWidth;
+      const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
+      const previewRect = previewElement.getBoundingClientRect();
+      const scale = canvas.width / previewRect.width;
+      const sectorRect = formCSectorHeaderRef.current?.getBoundingClientRect();
+      const sectorOffset =
+        rbiTemplate === "Form C" && sectorRect
+          ? Math.max(0, (sectorRect.top - previewRect.top) * scale)
+          : null;
+
+      const sliceCanvas = (
+        source: HTMLCanvasElement,
+        y: number,
+        height: number,
+      ) => {
+        const out = document.createElement("canvas");
+        out.width = source.width;
+        out.height = height;
+        const ctx = out.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(
+            source,
+            0,
+            y,
+            source.width,
+            height,
+            0,
+            0,
+            out.width,
+            out.height,
+          );
+        }
+        return out;
+      };
+
+      if (rbiTemplate === "Form C") {
+        const fitScale = Math.min(pageWidth / imgWidth, pageHeight / imgHeight);
+        const fitWidth = imgWidth * fitScale;
+        const fitHeight = imgHeight * fitScale;
+        const xOffset = (pageWidth - fitWidth) / 2;
+        const yOffset = (pageHeight - fitHeight) / 2;
+        pdf.addImage(imgData, "JPEG", xOffset, yOffset, fitWidth, fitHeight);
+      } else if (
+        sectorOffset &&
+        sectorOffset > 0 &&
+        sectorOffset < canvas.height
+      ) {
+        const firstCanvas = sliceCanvas(canvas, 0, Math.floor(sectorOffset));
+        const firstData = firstCanvas.toDataURL("image/jpeg", 0.98);
+        const firstProps = pdf.getImageProperties(firstData);
+        const firstHeight = (firstProps.height * imgWidth) / firstProps.width;
+        pdf.addImage(firstData, "JPEG", 0, 0, imgWidth, firstHeight);
+
+        const remainingHeight = canvas.height - Math.floor(sectorOffset);
+        const remainingCanvas = sliceCanvas(
+          canvas,
+          Math.floor(sectorOffset),
+          remainingHeight,
+        );
+        const remainingData = remainingCanvas.toDataURL("image/jpeg", 0.98);
+        const remainingProps = pdf.getImageProperties(remainingData);
+        const remainingImgHeight =
+          (remainingProps.height * imgWidth) / remainingProps.width;
+
+        let remaining = remainingImgHeight;
+        let yOffset = 0;
+        pdf.addPage();
+        while (remaining > 0) {
+          pdf.addImage(
+            remainingData,
+            "JPEG",
+            0,
+            -yOffset,
+            imgWidth,
+            remainingImgHeight,
+          );
+          remaining -= pageHeight;
+          yOffset += pageHeight;
+          if (remaining > 0) {
+            pdf.addPage();
+          }
+        }
+      } else if (imgHeight <= pageHeight) {
+        pdf.addImage(imgData, "JPEG", 0, 0, imgWidth, imgHeight);
+      } else {
+        let remainingHeight = imgHeight;
+        let yOffset = 0;
+
+        while (remainingHeight > 0) {
+          pdf.addImage(imgData, "JPEG", 0, -yOffset, imgWidth, imgHeight);
+          remainingHeight -= pageHeight;
+          yOffset += pageHeight;
+
+          if (remainingHeight > 0) {
+            pdf.addPage();
+          }
+        }
+      }
+
+      pdf.save(filename);
+      notify.success("PDF downloaded successfully.");
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message
+          ? `Failed to download PDF: ${error.message}`
+          : "Failed to download PDF.";
+      notify.error(message);
+    } finally {
+      previewElement.style.transform = prevTransform;
+      previewElement.style.transformOrigin = prevTransformOrigin;
+      previewElement.style.width = prevWidth;
+      previewElement.style.maxWidth = prevMaxWidth;
+      previewElement.style.height = prevHeight;
+      previewElement.style.maxHeight = prevMaxHeight;
+      previewElement.style.overflow = prevOverflow;
+      previewElement.style.zoom = prevZoom;
+      setIsTemplatePdfExporting(false);
+    }
+  };
+
   const formAPreviewStart =
     formAPreviewTotalRows === 0
       ? 0
@@ -1671,6 +1975,40 @@ const Reports: React.FC = () => {
   const formAPreviewEnd = Math.min(
     formAPreviewPage * formAPreviewRowsPerPage,
     formAPreviewTotalRows,
+  );
+  const selectedHousehold = households.find(
+    (household) => household.HouseholdID === selectedHouseholdId,
+  );
+  const formAHouseholdName = selectedHouseholdId
+    ? selectedHousehold?.householdNumber
+      ? `Household ${selectedHousehold.householdNumber}`
+      : `Household ${selectedHouseholdId}`
+    : "All Households";
+  const normalizePosition = (value: string) => value.trim().toLowerCase();
+  const buildOfficialName = (official?: Official) =>
+    official ? `Hon. ${official.FirstName} ${official.LastName}` : "";
+  const getOfficialByPosition = (positions: string[]) => {
+    const normalized = positions.map(normalizePosition);
+    return (
+      officials.find((official) =>
+        normalized.includes(normalizePosition(official.Position)),
+      ) ||
+      officials.find((official) =>
+        normalized.some((position) =>
+          normalizePosition(official.Position).includes(position),
+        ),
+      )
+    );
+  };
+  const barangaySecretaryName = buildOfficialName(
+    getOfficialByPosition(["Barangay Secretary", "Secretary"]),
+  );
+  const punongBarangayName = buildOfficialName(
+    getOfficialByPosition([
+      "Punong Barangay",
+      "Barangay Captain",
+      "Barangay Chairman",
+    ]),
   );
 
   return (
@@ -1705,20 +2043,6 @@ const Reports: React.FC = () => {
             Official analytics and RBI records management for Barangay 619 Zone
             62.
           </Typography>
-        </Box>
-        <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-          <FormControl size="small" sx={{ width: 140 }}>
-            <InputLabel>Year</InputLabel>
-            <Select
-              value={yearFilter}
-              label="Year"
-              onChange={(e) => setYearFilter(e.target.value)}
-              sx={{ borderRadius: 2, bgcolor: "white" }}
-            >
-              <MenuItem value="2025">2025</MenuItem>
-              <MenuItem value="2024">2024</MenuItem>
-            </Select>
-          </FormControl>
         </Box>
       </Box>
 
@@ -1972,12 +2296,18 @@ const Reports: React.FC = () => {
                 )}
 
                 <Zoom in={true} key={rbiTemplate}>
-                  <Box sx={{ width: "100%", maxWidth: "8.5in" }}>
+                  <Box
+                    ref={rbiPreviewRef}
+                    sx={{ width: "100%", maxWidth: "8.5in" }}
+                  >
                     {rbiTemplate === "Form A" && (
                       <Stack spacing={2}>
                         <FormA_Preview
                           residents={formAPreviewResidents}
                           totalResidents={formAPreviewTotalRows}
+                          householdName={formAHouseholdName}
+                          barangaySecretaryName={barangaySecretaryName}
+                          punongBarangayName={punongBarangayName}
                         />
                         <Paper variant="outlined" sx={{ borderRadius: 2 }}>
                           <Box
@@ -2016,6 +2346,10 @@ const Reports: React.FC = () => {
                       <FormC_Preview
                         residents={formAPreviewResidents}
                         formCData={formCData}
+                        isPdfExport={isTemplatePdfExporting}
+                        sectorHeaderRef={formCSectorHeaderRef}
+                        barangaySecretaryName={barangaySecretaryName}
+                        punongBarangayName={punongBarangayName}
                       />
                     )}
                     {rbiTemplate === "Cert" && (
@@ -2026,6 +2360,8 @@ const Reports: React.FC = () => {
                           formAPreviewTotalRows ??
                           0
                         }
+                        isPdfExport={isTemplatePdfExporting}
+                        punongBarangayName={punongBarangayName}
                       />
                     )}
                   </Box>
@@ -2173,10 +2509,43 @@ const Reports: React.FC = () => {
                       label="Target Year"
                       onChange={(e) => setYearFilter(e.target.value)}
                     >
-                      <MenuItem value="2025">2025</MenuItem>
-                      <MenuItem value="2024">2024</MenuItem>
+                      {yearOptions.map((year) => (
+                        <MenuItem key={year} value={year}>
+                          {year}
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
+
+                  {rbiTemplate === "Form A" && (
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Household</InputLabel>
+                      <Select<number | "">
+                        value={selectedHouseholdId ?? ""}
+                        label="Household"
+                        onChange={(e) => {
+                          const val = e.target.value as number | "";
+                          setSelectedHouseholdId(
+                            val === "" ? undefined : Number(val),
+                          );
+                          setFormAPreviewPage(1);
+                        }}
+                      >
+                        <MenuItem value="">
+                          <em>All Households</em>
+                        </MenuItem>
+                        {households.map((hh) => (
+                          <MenuItem key={hh.HouseholdID} value={hh.HouseholdID}>
+                            {hh.householdNumber ??
+                              `Household #${hh.HouseholdID}`}
+                            {hh.Street_Alley_Zone
+                              ? ` — ${hh.Street_Alley_Zone}`
+                              : ""}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  )}
                 </Stack>
 
                 <Box sx={{ mt: "auto", pt: 4 }}>
@@ -2215,9 +2584,9 @@ const Reports: React.FC = () => {
                       variant="contained"
                       fullWidth
                       startIcon={<Printer size={18} />}
-                      onClick={() => void handleFormAExport("pdf")}
+                      onClick={() => void handleTemplatePdfDownload()}
                       disabled={
-                        rbiTemplate !== "Form A" || !!formAExportingFormat
+                        rbiTemplate === "Form A" && !!formAExportingFormat
                       }
                       sx={{
                         bgcolor: "#2e0249",
@@ -2226,9 +2595,12 @@ const Reports: React.FC = () => {
                         py: 1.5,
                       }}
                     >
-                      {formAExportingFormat === "pdf"
+                      {rbiTemplate === "Form A" &&
+                      formAExportingFormat === "pdf"
                         ? "Preparing Official PDF..."
-                        : "Official PDF"}
+                        : rbiTemplate === "Form A"
+                          ? "Official PDF"
+                          : "Download PDF"}
                     </Button>
 
                     <Typography variant="caption" color="text.secondary">
@@ -2246,6 +2618,8 @@ const Reports: React.FC = () => {
         open={Boolean(selectedReport)}
         onClose={() => setSelectedReport(null)}
         category={selectedReport}
+        yearFilter={yearFilter}
+        semesterFilter={semesterFilter}
       />
     </Box>
   );
