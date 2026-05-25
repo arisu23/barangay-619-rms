@@ -121,6 +121,13 @@ export const reportService = {
     return response.data.data;
   },
 
+  async logExportAudit(
+    type: "FORM_C" | "BARANGAY_CERTIFICATION",
+    metadata: Record<string, unknown> = {},
+  ): Promise<void> {
+    await api.post("/reports/exports/audit", { type, metadata });
+  },
+
   async downloadResidentPdf(residentId: number): Promise<Blob> {
     const response = await api.get(`/reports/residents/${residentId}/pdf`, {
       responseType: "blob",

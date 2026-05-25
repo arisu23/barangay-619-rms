@@ -166,6 +166,17 @@ const normalizeRoleLabel = (role: string): "Admin" | "Staff" => {
   return role.toLowerCase() === "admin" ? "Admin" : "Staff";
 };
 
+const formatOfficialTermDate = (value?: string | null): string => {
+  if (!value) return "Not set";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+  });
+};
+
 const mapOfficialApiToUi = (official: OfficialApi): Official => ({
   id: official.OfficialID,
   residentId: official.ResidentID,
@@ -1378,8 +1389,8 @@ const Settings: React.FC = () => {
                         <TableCell
                           sx={{ color: "text.secondary", fontSize: "0.875rem" }}
                         >
-                          {official.termStart || "N/A"} -{" "}
-                          {official.termEnd || "N/A"}
+                          {formatOfficialTermDate(official.termStart)} -{" "}
+                          {formatOfficialTermDate(official.termEnd)}
                         </TableCell>
                         <TableCell align="center">
                           <Button
@@ -2290,7 +2301,7 @@ const Settings: React.FC = () => {
                         Start Date
                       </Typography>
                       <Typography variant="body2" fontWeight="500">
-                        {selectedOfficial.termStart || "Not set"}
+                        {formatOfficialTermDate(selectedOfficial.termStart)}
                       </Typography>
                     </Box>
                     <Box>
@@ -2298,7 +2309,7 @@ const Settings: React.FC = () => {
                         End Date
                       </Typography>
                       <Typography variant="body2" fontWeight="500">
-                        {selectedOfficial.termEnd || "Not set"}
+                        {formatOfficialTermDate(selectedOfficial.termEnd)}
                       </Typography>
                     </Box>
                   </Box>

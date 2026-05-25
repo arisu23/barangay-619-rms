@@ -7,6 +7,10 @@ import { AuditTrailRepository } from "../audit/audit.repository.js";
 
 export class ReportService {
   private static readonly FORM_A_EXPORT_MAX_ROWS = 10000;
+  private static readonly EXPORT_ACTIONS = {
+    FORM_C: "EXPORT_FORM_C",
+    BARANGAY_CERTIFICATION: "EXPORT_BARANGAY_CERTIFICATION",
+  } as const;
 
   //Get demographics summary (all 8 stat cards + chart data)
   static async getDemographicsSummary() {
@@ -128,6 +132,24 @@ export class ReportService {
   //Get RBI Form C data
   static async getFormCData() {
     return ReportRepository.getFormCData();
+  }
+
+  static async logExport(
+    type: keyof typeof ReportService.EXPORT_ACTIONS,
+    userId: number,
+    metadata: Record<string, unknown> = {},
+  ) {
+    const action = ReportService.EXPORT_ACTIONS[type];
+
+    try {
+      await AuditTrailRepository.log({
+        userId,
+        action,
+        newValue: JSON.stringify(metadata),
+      });
+    } catch (auditError) {
+      console.error(`Failed to write ${action} audit log:`, auditError);
+    }
   }
 }
 

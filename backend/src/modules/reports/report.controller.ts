@@ -129,6 +129,40 @@ export class ReportController {
     }
   }
 
+  //POST /api/reports/exports/audit - Log Form C/Certification exports
+  static async logExportAudit(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ) {
+    try {
+      const userId = req.user?.userId;
+
+      if (!userId) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+
+      const { type, metadata } = req.body as {
+        type?: "FORM_C" | "BARANGAY_CERTIFICATION";
+        metadata?: Record<string, unknown>;
+      };
+
+      if (type !== "FORM_C" && type !== "BARANGAY_CERTIFICATION") {
+        throw {
+          status: 400,
+          message:
+            "Invalid export type. Supported values are FORM_C and BARANGAY_CERTIFICATION.",
+        };
+      }
+
+      await ReportService.logExport(type, userId, metadata ?? {});
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   //GET /api/reports/residents/:id/pdf - Download resident profile PDF (FR4)
   static async downloadResidentPdf(
     req: Request,

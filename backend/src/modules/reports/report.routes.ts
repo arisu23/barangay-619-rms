@@ -27,6 +27,9 @@ router.get("/rbi/form-a/export", ReportController.exportFormA);
 //GET /api/reports/rbi/form-c - RBI Form C population monitoring data
 router.get("/rbi/form-c", ReportController.getFormCData);
 
+//POST /api/reports/exports/audit - Audit export actions
+router.post("/exports/audit", ReportController.logExportAudit);
+
 //GET /api/reports/residents/:id/pdf - Download resident profile PDF (FR4)
 router.get("/residents/:id/pdf", ReportController.downloadResidentPdf);
 

@@ -1949,6 +1949,34 @@ const Reports: React.FC = () => {
 
       pdf.save(filename);
       notify.success("PDF downloaded successfully.");
+
+      if (rbiTemplate === "Form C" || rbiTemplate === "Cert") {
+        const inhabitantsCount =
+          demographicsSummary?.stats.inhabitants ??
+          formCData?.summary.totalInhabitants ??
+          formAPreviewTotalRows ??
+          0;
+
+        const metadata = {
+          periodLabel,
+          year: yearFilter,
+          semester: semesterFilter,
+          totalInhabitants: inhabitantsCount,
+          totalHouseholds: formCData?.summary.totalHouseholds ?? null,
+          totalFamilies: formCData?.summary.totalFamilies ?? null,
+        };
+
+        try {
+          await reportService.logExportAudit(
+            rbiTemplate === "Form C"
+              ? "FORM_C"
+              : "BARANGAY_CERTIFICATION",
+            metadata,
+          );
+        } catch {
+          // Best-effort audit logging; do not block user download.
+        }
+      }
     } catch (error) {
       const message =
         error instanceof Error && error.message

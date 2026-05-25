@@ -9,6 +9,23 @@ const OfficialsList: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const sortedOfficials = React.useMemo(() => {
+    const priorityFor = (position: string) => {
+      const normalized = position.toLowerCase();
+      if (normalized.includes("captain")) return 0;
+      if (normalized.includes("secretary")) return 1;
+      return 2;
+    };
+
+    return [...officials].sort((a, b) => {
+      const priorityDiff = priorityFor(a.Position) - priorityFor(b.Position);
+      if (priorityDiff !== 0) return priorityDiff;
+      return a.Position.localeCompare(b.Position, undefined, {
+        sensitivity: "base",
+      });
+    });
+  }, [officials]);
+
   useEffect(() => {
     const fetchOfficials = async () => {
       try {
@@ -55,7 +72,7 @@ const OfficialsList: React.FC = () => {
             No officials found.
           </p>
         )}
-        {officials.map((official) => (
+        {sortedOfficials.map((official) => (
           <div
             key={official.OfficialID}
             className="flex flex-col p-3 rounded-lg hover:bg-gray-50 transition-colors"
