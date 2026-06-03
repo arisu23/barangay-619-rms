@@ -13,6 +13,7 @@ import OfficialsList from "./OfficialsList";
 import type { StatData, ChartData, DashboardStats } from "../types";
 import { dashboardService } from "../services/dashboardService";
 import { notify } from "../utils/notify";
+import { useHouseholdDataRefresh } from "../hooks/useHouseholdDataSync";
 
 // Reusable Component for Resident Logs with Button Toggle
 interface ResidentLogCardProps {
@@ -92,6 +93,19 @@ const Dashboard: React.FC = () => {
     };
     fetchDashboard();
   }, []);
+
+  const refreshDashboard = React.useCallback(async () => {
+    try {
+      const result = await dashboardService.getStats();
+      setData(result);
+    } catch (error: unknown) {
+      notify.error("Failed to load dashboard statistics.");
+      console.error("Dashboard stats fetch failed:", error);
+      setData(null);
+    }
+  }, []);
+
+  useHouseholdDataRefresh(refreshDashboard);
 
   // Data from API, with zero-value fallback
   const stats: StatData[] = [

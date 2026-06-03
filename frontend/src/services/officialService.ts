@@ -8,7 +8,7 @@ export interface OfficialApi {
   Position: string;
   TermStart: string;
   TermEnd: string | null;
-  BStatus: "Active" | "Inactive" | "Former";
+  BStatus: "Active" | "Former";
 }
 
 export interface CreateOfficialPayload {
@@ -22,12 +22,17 @@ export interface UpdateOfficialPayload {
   position?: string;
   termStart?: string;
   termEnd?: string | null;
-  bStatus?: "Active" | "Inactive" | "Former";
+  bStatus?: "Active" | "Former";
 }
 
 export const officialService = {
   async getAll(): Promise<OfficialApi[]> {
     const response = await api.get("/officials");
+    return response.data.data;
+  },
+
+  async getActive(): Promise<OfficialApi[]> {
+    const response = await api.get("/officials/active");
     return response.data.data;
   },
 

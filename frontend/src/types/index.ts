@@ -123,6 +123,8 @@ export interface CreateResidentData {
   householdRole?: "head" | "member";
   occupancyStatus?: "Owner" | "Renter" | "Sharer" | "Boarder";
   householdId?: number;
+  householdHeadId?: string;
+  familyRole?: string;
   address: {
     unitRoomFloor?: string;
     buildingName?: string;
@@ -147,6 +149,7 @@ export interface HouseholdListItem {
   Street_Alley_Zone: string;
   Barangay: string;
   memberCount: number;
+  familyCount?: number;
 }
 
 /** Shape returned by GET /api/households/:id */
@@ -172,17 +175,40 @@ export interface HouseholdNumber {
   HouseID: number;
   HouseholdNumberName: string;
   Status: string;
+  AddressID?: number | null;
+  HouseNumber?: string | null;
+  Street_Alley_Zone?: string | null;
+  Barangay?: string | null;
+  Municipality?: string | null;
+}
+
+export interface HouseholdAddressOption {
+  AddressID: number;
+  HouseNumber: string;
+  Street_Alley_Zone: string;
+  Barangay: string;
+  Municipality: string;
 }
 
 /** Shape returned by GET /api/families/household/:id */
 export interface FamilyRecord {
   FamilyHeadID: number;
   HeadType: "Primary" | "Secondary";
+  FamilyLabel?: string | null;
   ResidentID: number;
   FirstName: string;
   LastName: string;
   DateOfBirth: string;
   RelationshipToFamilyHead: string | null;
+}
+
+export interface FamilyHeadOption {
+  id: string;
+  name: string;
+  householdId: number;
+  householdNumber: string;
+  street: string;
+  familyLabel: string;
 }
 
 // Keep backward-compat alias
@@ -219,7 +245,7 @@ export interface Official {
   Position: string;
   TermStart?: string;
   TermEnd?: string | null;
-  BStatus?: string;
+  BStatus?: "Active" | "Former";
 }
 
 // ==========================================

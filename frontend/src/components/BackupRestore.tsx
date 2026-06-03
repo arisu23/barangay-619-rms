@@ -121,10 +121,27 @@ const BackupRestore: React.FC = () => {
     setIsProcessing(true);
 
     try {
-      await backupService.createBackup();
+      const result = await backupService.createBackup();
       setProgress(100);
       await fetchBackupLogs();
-      setSuccessMessage("Backup created successfully!");
+
+      //Auto-download the backup file to the user's Downloads folder
+      try {
+        const blob = await backupService.downloadBackup(result.backupId);
+        const fileUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = result.fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(fileUrl);
+      } catch {
+        //Non-critical: backup is saved on server even if download fails
+        notify.error("Backup created but auto-download failed. You can download it manually from the logs below.");
+      }
+
+      setSuccessMessage("Backup created successfully! The file has been saved to your Downloads folder.");
       notify.success("Backup created successfully!");
     } catch (err: unknown) {
       const message =

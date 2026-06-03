@@ -30,6 +30,7 @@ export interface UpdateResidentData {
   categories?: string[];
   householdRole?: "head" | "member";
   occupancyStatus?: "Owner" | "Renter" | "Sharer" | "Boarder";
+  householdId?: number;
 }
 
 export interface ResidentSearchFilters {

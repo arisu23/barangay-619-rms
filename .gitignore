@@ -72,3 +72,6 @@ qa
 playwright.config.ts
 e2e
 test-results
+backend/backups
+household-family-implementation-plan.md
+_temp_read.js

@@ -5,7 +5,7 @@ export class FamilyRepository {
     const conn = await pool.getConnection();
     try {
       const rows = await conn.query(
-        `SELECT FamilyHeadID, HouseholdID, ResidentID, HeadType
+        `SELECT FamilyHeadID, HouseholdID, ResidentID, HeadType, FamilyLabel
                  FROM FamilyHead
                  WHERE FamilyHeadID = ?
                  LIMIT 1`,
@@ -33,6 +33,39 @@ export class FamilyRepository {
     }
   }
 
+  static async getPrimaryHeadCount(householdId: number) {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT COUNT(*) AS total
+         FROM FamilyHead
+         WHERE HouseholdID = ? AND HeadType = 'Primary'`,
+        [householdId],
+      );
+
+      return Number(rows[0]?.total ?? 0);
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async getPrimaryHeadByResident(residentId: number) {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT FamilyHeadID, HouseholdID, ResidentID, HeadType, FamilyLabel
+         FROM FamilyHead
+         WHERE ResidentID = ? AND HeadType = 'Primary'
+         LIMIT 1`,
+        [residentId],
+      );
+
+      return rows[0] ?? null;
+    } finally {
+      conn.release();
+    }
+  }
+
   //Check if a resident is the primary household head
   static async isHouseholdHead(residentId: number): Promise<boolean> {
     const conn = await pool.getConnection();
@@ -47,13 +80,109 @@ export class FamilyRepository {
     }
   }
 
+  /**
+   * Get all family heads for a specific household.
+   * Used for generating family labels based on existing surnames.
+   */
+  static async getFamilyHeadsByHousehold(householdId: number): Promise<any[]> {
+    const conn = await pool.getConnection();
+    try {
+      const [rows] = await conn.query(
+        `SELECT
+           fh.FamilyHeadID AS FamilyHeadID,
+           r.ResidentID AS ResidentID,
+           CONCAT_WS(' ', r.FirstName, r.MiddleName, r.LastName) AS Name,
+           hh.HouseholdID AS HouseholdID,
+           hh.HouseholdNumber AS HouseholdNumber,
+           hh.Street_Alley_Zone AS Street,
+           fh.FamilyLabel AS FamilyLabel
+         FROM FamilyHead fh
+         JOIN Resident r ON r.ResidentID = fh.ResidentID
+         JOIN Household hh ON hh.HouseholdID = fh.HouseholdID
+         WHERE fh.HouseholdID = ?
+         ORDER BY fh.FamilyLabel`,
+        [householdId],
+      );
+      return rows as any[];
+    } finally {
+      conn.release();
+    }
+  }
+
   //Assign a primary family head
   static async assignPrimaryHead(householdId: number, residentId: number) {
     const conn = await pool.getConnection();
     try {
       await conn.query(
-        `INSERT INTO FamilyHead (HouseholdID, ResidentID, HeadType) VALUES (?, ?, 'Primary')`,
-        [householdId, residentId],
+        `INSERT INTO FamilyHead (HouseholdID, ResidentID, HeadType, FamilyLabel) VALUES (?, ?, 'Primary', ?)`,
+        [householdId, residentId, null],
+      );
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async assignPrimaryHeadWithLabel(
+    householdId: number,
+    residentId: number,
+    familyLabel: string,
+  ) {
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        `INSERT INTO FamilyHead (HouseholdID, ResidentID, HeadType, FamilyLabel) VALUES (?, ?, 'Primary', ?)`,
+        [householdId, residentId, familyLabel],
+      );
+    } finally {
+      conn.release();
+    }
+  }
+
+  /**
+   * Check if a resident already has a family membership.
+   * Returns the FamilyHeadID if they are a HEAD or a MEMBER of any family.
+   */
+  static async getExistingMembership(residentId: number) {
+    const conn = await pool.getConnection();
+    try {
+      const headRows = await conn.query(
+        `SELECT FamilyHeadID, HouseholdID, FamilyLabel
+         FROM FamilyHead
+         WHERE ResidentID = ?
+         LIMIT 1`,
+        [residentId],
+      );
+
+      const memberRows = await conn.query(
+        `SELECT f.FamilyID, f.FamilyHeadID, fh.FamilyLabel
+         FROM Family f
+         JOIN FamilyHead fh ON f.FamilyHeadID = fh.FamilyHeadID
+         WHERE f.ResidentID = ?
+         LIMIT 1`,
+        [residentId],
+      );
+
+      return {
+        isHead: headRows[0] ?? null,
+        isMember: memberRows[0] ?? null,
+      };
+    } finally {
+      conn.release();
+    }
+  }
+
+  /**
+   * Remove a resident from a specific family (Family table).
+   */
+  static async removeFamilyMembership(
+    residentId: number,
+    familyHeadId: number,
+  ) {
+    const conn = await pool.getConnection();
+    try {
+      await conn.query(
+        `DELETE FROM Family WHERE ResidentID = ? AND FamilyHeadID = ?`,
+        [residentId, familyHeadId],
       );
     } finally {
       conn.release();
@@ -85,6 +214,7 @@ export class FamilyRepository {
         `SELECT
            fh.FamilyHeadID,
            fh.HeadType,
+           fh.FamilyLabel,
            head.ResidentID,
            head.FirstName,
            head.LastName,
@@ -99,6 +229,7 @@ export class FamilyRepository {
          SELECT
            fh.FamilyHeadID,
            fh.HeadType,
+          fh.FamilyLabel,
            member.ResidentID,
            member.FirstName,
            member.LastName,
@@ -109,7 +240,7 @@ export class FamilyRepository {
          JOIN Resident member ON f.ResidentID = member.ResidentID
          WHERE fh.HouseholdID = ?
 
-         ORDER BY FamilyHeadID ASC`,
+         ORDER BY FamilyLabel ASC, FamilyHeadID ASC`,
         [householdId, householdId],
       );
     } finally {
@@ -118,86 +249,103 @@ export class FamilyRepository {
   }
 
   //Get eligible next-oldest members (excluding current head)
-  static async getEligibleNextOldest(household: number, currentHeadId: number) {
+  static async getEligibleNextOldestByFamilyHead(
+    familyHeadId: number,
+    currentHeadResidentId: number,
+  ) {
     const conn = await pool.getConnection();
     try {
       return await conn.query(
-        `SELECT ResidentID, DateOfBirth FROM Resident WHERE HouseholdID = ? AND ResidentID != ? AND ResidentStatus = 'Active' ORDER BY DateOfBirth ASC`,
-        [household, currentHeadId],
+        `SELECT r.ResidentID, r.DateOfBirth
+         FROM Family f
+         JOIN Resident r ON f.ResidentID = r.ResidentID
+         WHERE f.FamilyHeadID = ?
+           AND r.ResidentID != ?
+           AND r.ResidentStatus = 'Active'
+         ORDER BY r.DateOfBirth ASC`,
+        [familyHeadId, currentHeadResidentId],
       );
     } finally {
       conn.release();
     }
   }
 
-  //Replace family head
-  static async replaceFamilyHead(
-    oldHeadId: number,
+  //Replace family head for a single family group
+  static async replaceFamilyHeadWithinGroup(
+    familyHeadId: number,
     newResidentId: number,
-    householdId: number,
   ) {
     const conn = await pool.getConnection();
     try {
       await conn.beginTransaction();
 
+      const headRows = await conn.query(
+        `SELECT ResidentID FROM FamilyHead WHERE FamilyHeadID = ? LIMIT 1`,
+        [familyHeadId],
+      );
+
+      const currentHeadResidentId = Number(headRows[0]?.ResidentID ?? 0);
+
       // 1. Remove new head from Family table if they are a current member
-      //    (prevents duplicate rows in the UNION query)
       await conn.query(
-        `DELETE FROM Family WHERE ResidentID = ? AND FamilyHeadID IN (
-           SELECT FamilyHeadID FROM FamilyHead WHERE HouseholdID = ?
-         )`,
-        [newResidentId, householdId],
+        `DELETE FROM Family WHERE ResidentID = ? AND FamilyHeadID = ?`,
+        [newResidentId, familyHeadId],
       );
 
-      // 2. Capture existing Secondary head residents before cleanup
-      const existingSecondaryResidents = await conn.query(
-        `SELECT ResidentID FROM FamilyHead WHERE HouseholdID = ? AND HeadType = 'Secondary'`,
-        [householdId],
-      );
-
-      // 3. Re-link Family members from any existing Secondary heads to the current Primary
+      // 2. Update the family head to the new resident
       await conn.query(
-        `UPDATE Family SET FamilyHeadID = ? WHERE FamilyHeadID IN (
-           SELECT FamilyHeadID FROM FamilyHead WHERE HouseholdID = ? AND HeadType = 'Secondary'
-         )`,
-        [oldHeadId, householdId],
+        `UPDATE FamilyHead SET ResidentID = ? WHERE FamilyHeadID = ?`,
+        [newResidentId, familyHeadId],
       );
 
-      // 4. Delete all existing Secondary FamilyHead rows
-      await conn.query(
-        `DELETE FROM FamilyHead WHERE HouseholdID = ? AND HeadType = 'Secondary'`,
-        [householdId],
-      );
-
-      // 5. Demote old Primary head to Secondary
-      await conn.query(
-        `UPDATE FamilyHead SET HeadType = 'Secondary' WHERE FamilyHeadID = ?`,
-        [oldHeadId],
-      );
-
-      // 6. Insert new Primary head
-      const result = await conn.query(
-        `INSERT INTO FamilyHead (HouseholdID, ResidentID, HeadType) VALUES (?, ?, 'Primary')`,
-        [householdId, newResidentId],
-      );
-      const newHeadFamilyHeadId = result.insertId;
-
-      // 7. Add former Secondary head residents as regular family members
-      //    under the new Primary head so they remain visible in the family list
-      for (const row of existingSecondaryResidents) {
-        const residentId = Number(row.ResidentID);
-        if (residentId !== newResidentId) {
-          await conn.query(
-            `INSERT INTO Family (FamilyHeadID, ResidentID, RelationshipToFamilyHead) VALUES (?, ?, 'Relative')`,
-            [newHeadFamilyHeadId, residentId],
-          );
-        }
+      // 3. Demote the previous head into the family member list if needed
+      if (currentHeadResidentId && currentHeadResidentId !== newResidentId) {
+        await conn.query(
+          `INSERT INTO Family (FamilyHeadID, ResidentID, RelationshipToFamilyHead)
+           SELECT ?, ?, 'Relative'
+           WHERE NOT EXISTS (
+             SELECT 1 FROM Family WHERE FamilyHeadID = ? AND ResidentID = ?
+           )`,
+          [
+            familyHeadId,
+            currentHeadResidentId,
+            familyHeadId,
+            currentHeadResidentId,
+          ],
+        );
       }
 
       await conn.commit();
     } catch (error) {
       await conn.rollback();
       throw error;
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async getPrimaryHeads() {
+    const conn = await pool.getConnection();
+    try {
+      return await conn.query(
+        `SELECT
+           fh.FamilyHeadID,
+           fh.HouseholdID,
+           fh.ResidentID,
+           fh.FamilyLabel,
+           r.FirstName,
+           r.LastName,
+           hn.HouseholdNumberName AS HouseholdNumber,
+           a.Street_Alley_Zone
+         FROM FamilyHead fh
+         JOIN Resident r ON fh.ResidentID = r.ResidentID
+         JOIN Household h ON fh.HouseholdID = h.HouseholdID
+         JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
+         JOIN Address a ON h.AddressID = a.AddressID
+        WHERE fh.HeadType = 'Primary'
+          AND r.ResidentStatus = 'Active'
+         ORDER BY fh.HouseholdID, fh.FamilyLabel, fh.FamilyHeadID`,
+      );
     } finally {
       conn.release();
     }

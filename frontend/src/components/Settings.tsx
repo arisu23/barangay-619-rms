@@ -47,7 +47,6 @@ import {
   Plus,
   Eye,
   Trash2,
-  Upload,
   Calendar,
   ShieldCheck,
   UserPlus,
@@ -93,7 +92,7 @@ interface Official {
   firstName: string;
   lastName: string;
   position: string;
-  status: "Active" | "Inactive" | "Former";
+  status: "Active" | "Former";
   imageUrl?: string;
   termStart?: string;
   termEnd?: string;
@@ -150,11 +149,7 @@ const OFFICIAL_POSITIONS = [
   "Others",
 ];
 
-const OFFICIAL_STATUSES: Array<"Active" | "Inactive" | "Former"> = [
-  "Active",
-  "Inactive",
-  "Former",
-];
+const OFFICIAL_STATUSES: Array<"Active" | "Former"> = ["Active", "Former"];
 
 const getApiErrorMessage = (error: unknown, fallback: string) => {
   const message = (error as { response?: { data?: { message?: string } } })
@@ -190,13 +185,27 @@ const mapOfficialApiToUi = (official: OfficialApi): Official => ({
   imageUrl: undefined,
 });
 
+const formatLastLogin = (value: string | null): string => {
+  if (!value) return "Never";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Never";
+  return parsed.toLocaleDateString("en-US", {
+    month: "short",
+    day: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
 const mapUserApiToUi = (user: UserAccountApi): UserAccount => ({
   id: user.UserID,
   name: user.Username,
   username: user.Username,
   role: normalizeRoleLabel(user.Role),
   status: user.AccStatus,
-  lastLogin: "Never",
+  lastLogin: formatLastLogin(user.LastLogin),
 });
 
 const Settings: React.FC = () => {
@@ -257,7 +266,6 @@ const Settings: React.FC = () => {
   const [newOfficialResident, setNewOfficialResident] =
     useState<ResidentOption | null>(null);
   const [newOfficialPosition, setNewOfficialPosition] = useState("");
-  const [newOfficialImage, setNewOfficialImage] = useState<string | null>(null);
   const [newOfficialTermStart, setNewOfficialTermStart] = useState("");
   const [newOfficialTermEnd, setNewOfficialTermEnd] = useState("");
 
@@ -431,7 +439,6 @@ const Settings: React.FC = () => {
   const handleAddClick = () => {
     setNewOfficialResident(null);
     setNewOfficialPosition("");
-    setNewOfficialImage(null);
     setNewOfficialTermStart("");
     setNewOfficialTermEnd("");
     setIsAddOfficialOpen(true);
@@ -458,27 +465,6 @@ const Settings: React.FC = () => {
       notify.error(getApiErrorMessage(error, "Failed to add official."));
     } finally {
       setIsOfficialsSubmitting(false);
-    }
-  };
-
-  const handleImageUpload = (
-    event: React.ChangeEvent<HTMLInputElement>,
-    isEdit: boolean = false,
-  ) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (isEdit && editOfficialData) {
-          setEditOfficialData({
-            ...editOfficialData,
-            imageUrl: reader.result as string,
-          });
-        } else {
-          setNewOfficialImage(reader.result as string);
-        }
-      };
-      reader.readAsDataURL(file);
     }
   };
 
@@ -659,6 +645,10 @@ const Settings: React.FC = () => {
     Math.ceil(officials.length / officialsRowsPerPage),
   );
   const sortedOfficials = [...officials].sort((a, b) => {
+    const statusRank = (status: Official["status"]) =>
+      status === "Active" ? 0 : 1;
+    const statusDiff = statusRank(a.status) - statusRank(b.status);
+    if (statusDiff !== 0) return statusDiff;
     const compare = a.name.localeCompare(b.name, undefined, {
       sensitivity: "base",
     });
@@ -1347,6 +1337,9 @@ const Settings: React.FC = () => {
                     <TableCell sx={{ fontWeight: "bold", width: "28%" }}>
                       Position
                     </TableCell>
+                    <TableCell sx={{ fontWeight: "bold", width: "140px" }}>
+                      Status
+                    </TableCell>
                     <TableCell sx={{ fontWeight: "bold", width: "28%" }}>
                       Term
                     </TableCell>
@@ -1361,7 +1354,7 @@ const Settings: React.FC = () => {
                 <TableBody>
                   {isOfficialsLoading ? (
                     <TableRow>
-                      <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
+                      <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                         <Typography variant="body1" color="text.secondary">
                           Loading officials...
                         </Typography>
@@ -1386,6 +1379,18 @@ const Settings: React.FC = () => {
                             {official.position}
                           </span>
                         </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={official.status}
+                            size="small"
+                            color={
+                              official.status === "Active"
+                                ? "success"
+                                : "default"
+                            }
+                            sx={{ fontWeight: 700 }}
+                          />
+                        </TableCell>
                         <TableCell
                           sx={{ color: "text.secondary", fontSize: "0.875rem" }}
                         >
@@ -1407,7 +1412,7 @@ const Settings: React.FC = () => {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={5} align="center" sx={{ py: 8 }}>
+                      <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                         <Typography variant="body1" color="text.secondary">
                           No officials found.
                         </Typography>
@@ -2062,34 +2067,6 @@ const Settings: React.FC = () => {
                 </Grid>
               </Grid>
             </Box>
-            <Box>
-              <Typography
-                variant="subtitle2"
-                sx={{ mb: 1, fontWeight: "bold" }}
-              >
-                Official Photo
-              </Typography>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                <Avatar
-                  src={newOfficialImage || undefined}
-                  sx={{ width: 64, height: 64, bgcolor: "#f3f4f6" }}
-                />
-                <Button
-                  variant="outlined"
-                  component="label"
-                  startIcon={<Upload size={16} />}
-                  size="small"
-                >
-                  Upload Photo
-                  <input
-                    type="file"
-                    hidden
-                    accept="image/*"
-                    onChange={(e) => handleImageUpload(e)}
-                  />
-                </Button>
-              </Box>
-            </Box>
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
@@ -2163,29 +2140,6 @@ const Settings: React.FC = () => {
                   >
                     {editOfficialData.firstName.charAt(0)}
                   </Avatar>
-                  {isEditingOfficial && (
-                    <IconButton
-                      component="label"
-                      sx={{
-                        position: "absolute",
-                        bottom: 16,
-                        right: -4,
-                        bgcolor: "white",
-                        border: "1px solid #e5e7eb",
-                        width: 32,
-                        height: 32,
-                        "&:hover": { bgcolor: "#f9fafb" },
-                      }}
-                    >
-                      <Camera size={16} />
-                      <input
-                        type="file"
-                        hidden
-                        accept="image/*"
-                        onChange={(e) => handleImageUpload(e, true)}
-                      />
-                    </IconButton>
-                  )}
                 </Box>
                 <Typography variant="h6" fontWeight="bold">
                   {selectedOfficial.name}
@@ -2233,10 +2187,7 @@ const Settings: React.FC = () => {
                         onChange={(e) =>
                           setEditOfficialData({
                             ...editOfficialData,
-                            status: e.target.value as
-                              | "Active"
-                              | "Inactive"
-                              | "Former",
+                            status: e.target.value as "Active" | "Former",
                           })
                         }
                       >

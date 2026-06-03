@@ -70,6 +70,10 @@ export class HouseholdService {
     return HouseholdRepository.getAllHouseholds();
   }
 
+  static async getAllHouseholdAddresses() {
+    return HouseholdRepository.getAllHouseholdAddresses();
+  }
+
   static async updateHousehold(householdId: number, data: any, userId: number) {
     const existing = await HouseholdRepository.getHouseholdById(householdId);
     if (!existing) {
@@ -95,6 +99,33 @@ export class HouseholdService {
     return HouseholdRepository.getAllHouseholdNumbers();
   }
 
+  static async renameHouseholdNumber(
+    houseId: number,
+    newName: string,
+    userId: number,
+  ) {
+    if (!newName || !newName.trim()) {
+      throw { status: 400, message: "Household number name is required!" };
+    }
+
+    const updated = await HouseholdRepository.updateHouseholdNumberName(
+      houseId,
+      newName.trim(),
+    );
+
+    if (!updated) {
+      throw { status: 404, message: "Household number not found!" };
+    }
+
+    await AuditTrailRepository.log({
+      userId,
+      action: "UPDATE_HOUSEHOLD_NUMBER_NAME",
+      newValue: JSON.stringify({ houseId, newName: newName.trim() }),
+    });
+
+    return true;
+  }
+
   static async createHouseholdNumber(
     data: { householdNumberName: string; addressId?: number },
     userId: number,
@@ -102,6 +133,27 @@ export class HouseholdService {
     if (!data.householdNumberName) {
       throw { status: 400, message: "Household number name is required!" };
     }
+
+    const addressId = Number(data.addressId);
+    if (!Number.isInteger(addressId) || addressId <= 0) {
+      throw { status: 400, message: "Valid addressId is required!" };
+    }
+
+    // Validate that the address exists and belongs to allowed streets
+    const allowedStreets = ["Batas", "Katwiran", "Lubiran"];
+    const address = await HouseholdRepository.getAddressById(addressId);
+    if (!address) {
+      throw { status: 400, message: "Invalid addressId!" };
+    }
+
+    const street = (address.Street_Alley_Zone || "").trim();
+    if (!allowedStreets.includes(street)) {
+      throw {
+        status: 400,
+        message: "Selected street is not allowed for this barangay.",
+      };
+    }
+
     const houseId = await HouseholdRepository.createHouseholdNumber(data);
     await AuditTrailRepository.log({
       userId,

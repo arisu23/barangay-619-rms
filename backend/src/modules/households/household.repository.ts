@@ -79,6 +79,23 @@ export class HouseholdRepository {
     }
   }
 
+  static async updateHouseholdNumberName(
+    houseId: number,
+    newName: string,
+  ) {
+    const conn = await pool.getConnection();
+    try {
+      const result = await conn.query(
+        `UPDATE HouseholdNumber SET HouseholdNumberName = ? WHERE HouseID = ?`,
+        [newName, houseId],
+      );
+
+      return result.affectedRows > 0;
+    } finally {
+      conn.release();
+    }
+  }
+
   static async getHouseholdById(householdId: number) {
     const conn = await pool.getConnection();
 
@@ -143,7 +160,10 @@ export class HouseholdRepository {
           a.Street_Alley_Zone,
           a.Barangay,
           (SELECT COUNT(*) FROM Resident r WHERE r.HouseholdID = h.HouseholdID AND r.ResidentStatus = 'Active')
-          AS memberCount FROM Household h
+            AS memberCount,
+            (SELECT COUNT(*) FROM FamilyHead fh WHERE fh.HouseholdID = h.HouseholdID AND fh.HeadType = 'Primary')
+            AS familyCount
+            FROM Household h
           JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
           JOIN Address a ON h.AddressID = a.AddressID
           ORDER BY h.HouseholdID`,
@@ -153,7 +173,46 @@ export class HouseholdRepository {
         ...row,
         HouseholdID: toNumber(row.HouseholdID),
         memberCount: toNumber(row.memberCount),
+        familyCount: toNumber(row.familyCount),
       }));
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async getAllHouseholdAddresses() {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT AddressID, HouseNumber, Street_Alley_Zone, Barangay, Municipality
+         FROM Address
+         ORDER BY Street_Alley_Zone, HouseNumber, AddressID`,
+      );
+
+      return rows.map((row: any) => ({
+        ...row,
+        AddressID: toNumber(row.AddressID),
+      }));
+    } finally {
+      conn.release();
+    }
+  }
+
+  static async getAddressById(addressId: number) {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT AddressID, HouseNumber, Street_Alley_Zone, Barangay, Municipality
+         FROM Address WHERE AddressID = ? LIMIT 1`,
+        [addressId],
+      );
+
+      if (!rows || rows.length === 0) return null;
+      const row: any = rows[0];
+      return {
+        ...row,
+        AddressID: toNumber(row.AddressID),
+      };
     } finally {
       conn.release();
     }
@@ -177,16 +236,93 @@ export class HouseholdRepository {
       conn.release();
     }
   }
+  /**
+   * Resolve a HouseID (from HouseholdNumber) to a HouseholdID.
+   * If no Household row exists for the HouseID, create one automatically
+   * using the address from the HouseholdNumber record.
+   */
+  static async resolveOrCreateHousehold(
+    conn: Awaited<ReturnType<typeof pool.getConnection>>,
+    houseId: number,
+  ): Promise<number> {
+    // Check if Household already exists for this HouseID
+    const existing = await conn.query(
+      `SELECT HouseholdID FROM Household WHERE HouseID = ? LIMIT 1`,
+      [houseId],
+    );
+
+    if (existing.length > 0) {
+      return toNumber(existing[0].HouseholdID);
+    }
+
+    // Get address from HouseholdNumber
+    const hnRows = await conn.query(
+      `SELECT AddressID FROM HouseholdNumber WHERE HouseID = ? LIMIT 1`,
+      [houseId],
+    );
+
+    if (hnRows.length === 0 || !hnRows[0].AddressID) {
+      throw { status: 400, message: "Household number not found or has no address!" };
+    }
+
+    const addressId = toNumber(hnRows[0].AddressID);
+
+    // Create Household row
+    const result = await conn.query(
+      `INSERT INTO Household (HouseID, AddressID) VALUES (?, ?)`,
+      [houseId, addressId],
+    );
+
+    // Mark household number as Assigned
+    await conn.query(
+      `UPDATE HouseholdNumber SET Status = 'Assigned' WHERE HouseID = ? AND Status = 'Available'`,
+      [houseId],
+    );
+
+    return toNumber(result.insertId);
+  }
+
+  /**
+   * Find a HouseholdID by HouseID (from HouseholdNumber).
+   * Returns null if no Household row exists.
+   */
+  static async findHouseholdIdByHouseId(
+    houseId: number,
+  ): Promise<number | null> {
+    const conn = await pool.getConnection();
+    try {
+      const rows = await conn.query(
+        `SELECT HouseholdID FROM Household WHERE HouseID = ? LIMIT 1`,
+        [houseId],
+      );
+      return rows.length > 0 ? toNumber(rows[0].HouseholdID) : null;
+    } finally {
+      conn.release();
+    }
+  }
+
   // HouseholdNumber methods
   static async getAllHouseholdNumbers() {
     const conn = await pool.getConnection();
     try {
       const rows = await conn.query(
-        `SELECT HouseID, HouseholdNumberName, Status FROM HouseholdNumber ORDER BY HouseID`,
+        `SELECT
+          hn.HouseID,
+          hn.HouseholdNumberName,
+          hn.Status,
+          hn.AddressID,
+          a.HouseNumber,
+          a.Street_Alley_Zone,
+          a.Barangay,
+          a.Municipality
+         FROM HouseholdNumber hn
+         LEFT JOIN Address a ON hn.AddressID = a.AddressID
+         ORDER BY hn.HouseID`,
       );
       return rows.map((row: any) => ({
         ...row,
         HouseID: toNumber(row.HouseID),
+        AddressID: row.AddressID == null ? null : toNumber(row.AddressID),
       }));
     } finally {
       conn.release();

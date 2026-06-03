@@ -5,6 +5,7 @@ export interface UserAccountApi {
   Username: string;
   Role: "Admin" | "Staff";
   AccStatus: "Active" | "Inactive";
+  LastLogin: string | null;
 }
 
 export interface CreateUserPayload {

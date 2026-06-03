@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   AppBar,
@@ -44,7 +44,11 @@ import {
 } from "lucide-react";
 import type { TransitionProps } from "@mui/material/transitions";
 import { residentService } from "../services/residentService";
+import { householdService } from "../services/householdService";
+import { familyService } from "../services/familyService";
 import { notify } from "../utils/notify";
+import { useHouseholdDataRefresh } from "../hooks/useHouseholdDataSync";
+import type { HouseholdListItem, FamilyHeadOption } from "../types";
 
 // --- Types ---
 interface ResidentProfileModalProps {
@@ -53,6 +57,25 @@ interface ResidentProfileModalProps {
   residentId?: string | number;
   onUpdated?: () => void;
 }
+
+const familyRoles = [
+  "Spouse",
+  "Son",
+  "Daughter",
+  "Father",
+  "Mother",
+  "Brother",
+  "Sister",
+  "Grandson",
+  "Granddaughter",
+  "Grandparent",
+  "Nephew",
+  "Niece",
+  "In-law",
+  "Relative",
+  "Househelp",
+  "Other",
+];
 
 const Transition = React.forwardRef(function Transition(
   props: TransitionProps & {
@@ -87,8 +110,11 @@ const emptyFormData = {
   city: "",
   householdRole: "",
   householdNumber: "",
+  householdId: "",
   occupancyStatus: "",
   householdHeadName: "",
+  familyHeadId: "",
+  relationship: "",
   hasEducation: "no",
   educationLevel: "",
   educationStatus: "",
@@ -133,6 +159,40 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
   const [isLoadingProfile, setIsLoadingProfile] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [households, setHouseholds] = useState<HouseholdListItem[]>([]);
+  const [isHouseholdsLoading, setIsHouseholdsLoading] = useState(false);
+  const [familyHeadOptions, setFamilyHeadOptions] = useState<
+    FamilyHeadOption[]
+  >([]);
+
+  const fetchHouseholds = useCallback(async () => {
+    if (!open) {
+      return;
+    }
+
+    setIsHouseholdsLoading(true);
+    try {
+      const data = await householdService.getAll();
+      setHouseholds(data);
+    } catch {
+      notify.error("Failed to load household list.");
+    } finally {
+      setIsHouseholdsLoading(false);
+    }
+  }, [open]);
+
+  useHouseholdDataRefresh(fetchHouseholds);
+
+  // Fetch family head options when modal opens
+  const fetchFamilyHeads = useCallback(async () => {
+    if (!open) return;
+    try {
+      const heads = await familyService.getPrimaryHeads();
+      setFamilyHeadOptions(heads);
+    } catch {
+      // silently fail — family head options will just be empty
+    }
+  }, [open]);
 
   // Fetch full profile from API when modal opens
   useEffect(() => {
@@ -179,8 +239,18 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
             city: data.Municipality || "",
             householdRole: normalizedHouseholdRole,
             householdNumber: data.HouseholdNumber || "",
+            householdId: data.HouseholdID ? String(data.HouseholdID) : "",
             occupancyStatus: data.OccupancyStatus || "",
             householdHeadName: data.HouseholdHeadName || "",
+            familyHeadId: (data as unknown as Record<string, unknown>)
+              .FamilyHeadID
+              ? String(
+                  (data as unknown as Record<string, unknown>).FamilyHeadID,
+                )
+              : "",
+            relationship:
+              ((data as unknown as Record<string, unknown>)
+                .RelationshipToFamilyHead as string) || "",
             hasEducation:
               data.EducationLevel || data.EducationStatus ? "yes" : "no",
             educationLevel: data.EducationLevel || "",
@@ -204,12 +274,14 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
         }
       };
       fetchProfile();
+      fetchHouseholds();
+      fetchFamilyHeads();
     }
     if (!open) {
       setIsEditing(false);
       setTabValue(0);
     }
-  }, [open, residentId]);
+  }, [open, residentId, fetchHouseholds]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -225,6 +297,25 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
     setConfirmOpen(false);
     setIsSaving(true);
     try {
+      const wasHead = originalData.householdRole === "head";
+      const wasHouseholdId = originalData.householdId;
+      const nextIsHead = formData.householdRole === "head";
+      const nextHouseholdId = formData.householdId;
+
+      if (wasHead && (!nextIsHead || wasHouseholdId !== nextHouseholdId)) {
+        try {
+          await familyService.demoteHead(Number(residentId));
+        } catch (err: unknown) {
+          const message =
+            (err as { response?: { data?: { message?: string } } })?.response
+              ?.data?.message ||
+            "Unable to demote family head. Assign a member first.";
+          notify.error(message);
+          setIsSaving(false);
+          return;
+        }
+      }
+
       await residentService.update(Number(residentId), {
         firstName: formData.firstName,
         middleName: formData.middleName || undefined,
@@ -256,7 +347,8 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
         precinctNumber: formData.precinctNumber || undefined,
         categories: formData.categories,
         householdRole:
-          formData.householdRole === "head" || formData.householdRole === "member"
+          formData.householdRole === "head" ||
+          formData.householdRole === "member"
             ? formData.householdRole
             : undefined,
         occupancyStatus:
@@ -266,7 +358,60 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
           formData.occupancyStatus === "Boarder"
             ? formData.occupancyStatus
             : undefined,
+        householdId:
+          formData.householdRole === "head" && formData.householdId
+            ? Number(formData.householdId)
+            : undefined,
       });
+
+      if (nextIsHead && nextHouseholdId) {
+        const shouldAssignHead = !wasHead || wasHouseholdId !== nextHouseholdId;
+
+        if (shouldAssignHead) {
+          try {
+            await familyService.assignHead(
+              Number(nextHouseholdId),
+              Number(residentId),
+            );
+          } catch {
+            notify.warn("Resident updated, but family head assignment failed.");
+          }
+        }
+      }
+
+      // Link member to family head in Family table
+      if (
+        !nextIsHead &&
+        formData.householdRole === "member" &&
+        formData.familyHeadId
+      ) {
+        try {
+          await familyService.addMember(
+            Number(formData.familyHeadId),
+            Number(residentId),
+            formData.relationship || "Relative",
+          );
+        } catch (memberErr: unknown) {
+          const memberMessage =
+            (
+              memberErr as {
+                response?: { data?: { message?: string } };
+              }
+            )?.response?.data?.message || undefined;
+          // If the member already exists in the Family table, that's fine
+          if (
+            memberMessage &&
+            memberMessage.toLowerCase().includes("duplicate")
+          ) {
+            // Already linked — ignore
+          } else {
+            notify.warn(
+              "Resident updated, but family member linking failed.",
+            );
+          }
+        }
+      }
+
       notify.success("Resident updated successfully!");
       setIsEditing(false);
       setOriginalData(formData);
@@ -293,6 +438,18 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
 
   const handleChange = (field: string, value: string | string[]) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleHouseholdChange = (value: string) => {
+    const selected = households.find(
+      (household) => String(household.HouseholdID) === value,
+    );
+
+    setFormData((prev) => ({
+      ...prev,
+      householdId: value,
+      householdNumber: selected?.householdNumber || "",
+    }));
   };
 
   // --- Render Helpers ---
@@ -329,8 +486,8 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
           fullWidth
           size="small"
           label={label}
-          type={type === "date" ? "date" : "text"}
           value={value}
+          type={type}
           onChange={(e) => handleChange(field, e.target.value)}
           InputLabelProps={type === "date" ? { shrink: true } : undefined}
         />
@@ -844,9 +1001,38 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
                           {formData.householdRole === "head" ? (
                             <>
                               <Grid size={{ xs: 12, md: 3 }}>
-                                {renderField(
-                                  "Household Number",
-                                  "householdNumber",
+                                {isEditing ? (
+                                  <FormControl fullWidth size="small">
+                                    <InputLabel>Household Number</InputLabel>
+                                    <Select
+                                      value={formData.householdId}
+                                      label="Household Number"
+                                      onChange={(e) =>
+                                        handleHouseholdChange(
+                                          String(e.target.value),
+                                        )
+                                      }
+                                      disabled={isHouseholdsLoading}
+                                    >
+                                      <MenuItem value="">
+                                        Select a household
+                                      </MenuItem>
+                                      {households.map((household) => (
+                                        <MenuItem
+                                          key={household.HouseholdID}
+                                          value={String(household.HouseholdID)}
+                                        >
+                                          {household.householdNumber} -{" "}
+                                          {household.Street_Alley_Zone}
+                                        </MenuItem>
+                                      ))}
+                                    </Select>
+                                  </FormControl>
+                                ) : (
+                                  renderField(
+                                    "Household Number",
+                                    "householdNumber",
+                                  )
                                 )}
                               </Grid>
                               <Grid size={{ xs: 12, md: 3 }}>
@@ -856,6 +1042,92 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
                                   "select",
                                   ["Owner", "Renter", "Sharer", "Boarder"],
                                 )}
+                              </Grid>
+                            </>
+                          ) : isEditing ? (
+                            <>
+                              <Grid size={{ xs: 12, md: 3 }}>
+                                <FormControl fullWidth size="small">
+                                  <InputLabel>Household Number</InputLabel>
+                                  <Select
+                                    value={formData.householdId}
+                                    label="Household Number"
+                                    onChange={(e) =>
+                                      handleHouseholdChange(
+                                        String(e.target.value),
+                                      )
+                                    }
+                                    disabled={isHouseholdsLoading}
+                                  >
+                                    <MenuItem value="">
+                                      Select a household
+                                    </MenuItem>
+                                    {households.map((household) => (
+                                      <MenuItem
+                                        key={household.HouseholdID}
+                                        value={String(household.HouseholdID)}
+                                      >
+                                        {household.householdNumber} -{" "}
+                                        {household.Street_Alley_Zone}
+                                      </MenuItem>
+                                    ))}
+                                  </Select>
+                                </FormControl>
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 3 }}>
+                                <FormControl fullWidth size="small">
+                                  <InputLabel>Family Head</InputLabel>
+                                  <Select
+                                    value={formData.familyHeadId}
+                                    label="Family Head"
+                                    onChange={(e) =>
+                                      handleChange(
+                                        "familyHeadId",
+                                        String(e.target.value),
+                                      )
+                                    }
+                                  >
+                                    <MenuItem value="">
+                                      Select a family head
+                                    </MenuItem>
+                                    {familyHeadOptions
+                                      .filter(
+                                        (head) =>
+                                          !formData.householdId ||
+                                          head.householdId ===
+                                            Number(formData.householdId),
+                                      )
+                                      .map((head) => (
+                                        <MenuItem
+                                          key={head.id}
+                                          value={head.id}
+                                        >
+                                          {head.name}
+                                          {head.familyLabel
+                                            ? ` (${head.familyLabel})`
+                                            : ""}
+                                        </MenuItem>
+                                      ))}
+                                  </Select>
+                                </FormControl>
+                              </Grid>
+                              <Grid size={{ xs: 12, md: 3 }}>
+                                <TextField
+                                  fullWidth
+                                  size="small"
+                                  select
+                                  label="Relationship to Family Head"
+                                  value={formData.relationship}
+                                  onChange={(e) =>
+                                    handleChange("relationship", e.target.value)
+                                  }
+                                >
+                                  {familyRoles.map((role) => (
+                                    <MenuItem key={role} value={role}>
+                                      {role}
+                                    </MenuItem>
+                                  ))}
+                                </TextField>
                               </Grid>
                             </>
                           ) : (
@@ -884,6 +1156,15 @@ const ResidentProfileModal: React.FC<ResidentProfileModalProps> = ({
                                       }`
                                     : "Not available"}
                                 </Typography>
+                                {formData.relationship && (
+                                  <Typography
+                                    variant="body2"
+                                    color="text.secondary"
+                                    sx={{ mt: 0.5 }}
+                                  >
+                                    Relationship: {formData.relationship}
+                                  </Typography>
+                                )}
                               </Box>
                             </Grid>
                           )}

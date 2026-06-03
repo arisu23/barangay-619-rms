@@ -36,7 +36,11 @@ export const UserRepository = {
     const conn = await pool.getConnection();
     try {
       const rows = await conn.query(
-        `SELECT UserID, Username, Role, AccStatus FROM UserAccount ORDER BY UserID`
+        `SELECT u.UserID, u.Username, u.Role, u.AccStatus,
+          (SELECT MAX(a.Timestamp) FROM AuditTrail a
+           WHERE a.UserID = u.UserID AND a.Action = 'USER_LOGIN') AS LastLogin
+        FROM UserAccount u
+        ORDER BY u.UserID`
       );
 
       return rows;

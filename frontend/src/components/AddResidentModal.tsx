@@ -51,8 +51,10 @@ export interface HouseholdOption {
 export interface FamilyHeadOption {
   id: string;
   name: string;
+  householdId: number;
   householdNumber: string;
   street: string;
+  familyLabel: string;
 }
 
 interface AddResidentModalProps {
@@ -62,6 +64,7 @@ interface AddResidentModalProps {
   householdOptions?: HouseholdOption[];
   familyHeadOptions?: FamilyHeadOption[];
   initialHeadId?: string;
+  initialHouseholdId?: string;
 }
 
 const Transition = React.forwardRef(function Transition(
@@ -191,6 +194,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
   householdOptions = [],
   familyHeadOptions = [],
   initialHeadId,
+  initialHouseholdId,
 }) => {
   const [activeStep, setActiveStep] = useState(0);
   const [formData, setFormData] = useState(initialFormData);
@@ -203,20 +207,77 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
     }
 
     if (initialHeadId) {
-      const head = familyHeadsList.find((h) => h.id === initialHeadId);
       setFormData({
         ...initialFormData,
         householdRole: "member",
         householdHeadId: initialHeadId,
-        street: head?.street || "",
-        householdNumber: head?.householdNumber || "",
+      });
+      setActiveStep(0);
+    } else if (initialHouseholdId) {
+      setFormData({
+        ...initialFormData,
+        householdRole: "head",
       });
       setActiveStep(0);
     } else {
       setFormData(initialFormData);
       setActiveStep(0);
     }
-  }, [open, familyHeadsList, initialHeadId]);
+  }, [open, initialHeadId, initialHouseholdId]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (initialHeadId) {
+      const head = familyHeadsList.find((h) => h.id === initialHeadId);
+      if (!head) {
+        return;
+      }
+
+      setFormData((currentFormData) =>
+        currentFormData.householdHeadId !== initialHeadId
+          ? currentFormData
+          : {
+              ...currentFormData,
+              householdRole: "member",
+              householdHeadId: initialHeadId,
+              street: currentFormData.street || head.street || "",
+              householdNumber:
+                currentFormData.householdNumber || head.householdNumber || "",
+            },
+      );
+      return;
+    }
+
+    if (initialHouseholdId) {
+      const household = householdOptions.find(
+        (option) => option.id === initialHouseholdId,
+      );
+      if (!household) {
+        return;
+      }
+
+      setFormData((currentFormData) =>
+        currentFormData.householdRole !== "head"
+          ? currentFormData
+          : {
+              ...currentFormData,
+              householdRole: "head",
+              householdNumber:
+                currentFormData.householdNumber || household.number || "",
+              street: currentFormData.street || household.street || "",
+            },
+      );
+    }
+  }, [
+    familyHeadsList,
+    householdOptions,
+    initialHeadId,
+    initialHouseholdId,
+    open,
+  ]);
 
   const steps = [
     { label: "Personal Info", icon: <User size={20} /> },
@@ -729,15 +790,23 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                 />
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField
-                  required
-                  fullWidth
-                  label="Street/Alley/Zone"
-                  name="street"
-                  value={formData.street}
-                  onChange={handleChange}
-                  InputProps={{ readOnly: !!initialHeadId }}
-                />
+                <FormControl fullWidth required>
+                  <InputLabel>Street/Alley/Zone</InputLabel>
+                  <Select
+                    name="street"
+                    value={formData.street}
+                    label="Street/Alley/Zone"
+                    onChange={handleSelectChange}
+                    disabled={!!initialHeadId}
+                  >
+                    <MenuItem value="Batas">Batas</MenuItem>
+                    <MenuItem value="Katwiran">Katwiran</MenuItem>
+                    <MenuItem value="Lubiran">Lubiran</MenuItem>
+                  </Select>
+                  {initialHeadId && (
+                    <FormHelperText>Locked to family head</FormHelperText>
+                  )}
+                </FormControl>
               </Grid>
               <Grid size={{ xs: 12, sm: 6 }}>
                 <TextField
@@ -841,7 +910,7 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
               <Grid container spacing={3}>
                 <Grid size={{ xs: 12, md: 6 }}>
                   <FormControl fullWidth required>
-                    <InputLabel>Physical Household Number</InputLabel>
+                    <InputLabel>Barangay Household Number</InputLabel>
                     <Select
                       name="householdNumber"
                       value={formData.householdNumber}
@@ -922,7 +991,8 @@ const AddResidentModal: React.FC<AddResidentModalProps> = ({
                       {familyHeadsList.length > 0 ? (
                         familyHeadsList.map((head) => (
                           <MenuItem key={head.id} value={head.id}>
-                            {head.name} ({head.householdNumber})
+                            {head.familyLabel} - {head.name} (
+                            {head.householdNumber})
                           </MenuItem>
                         ))
                       ) : (

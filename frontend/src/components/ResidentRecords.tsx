@@ -6,6 +6,8 @@ import {
   TextField,
   InputAdornment,
   Button,
+  FormControl,
+  InputLabel,
   Table,
   TableBody,
   TableCell,
@@ -28,6 +30,7 @@ import {
   Divider,
   Stack,
   Badge,
+  Select,
 } from "@mui/material";
 import {
   Search,
@@ -41,6 +44,7 @@ import {
   Home,
   ChevronDown,
   UsersRound,
+  Pencil,
   X,
   Crown,
   UserCheck,
@@ -54,12 +58,16 @@ import { householdService } from "../services/householdService";
 import { familyService } from "../services/familyService";
 import { archiveService } from "../services/archiveService";
 import { notify } from "../utils/notify";
+import { useHouseholdDataRefresh } from "../hooks/useHouseholdDataSync";
 import SortOrderToggle, { type SortOrder } from "./SortOrderToggle";
 import type {
   ResidentListItem,
   HouseholdListItem,
+  HouseholdAddressOption,
+  HouseholdNumber,
   FamilyRecord,
   CreateResidentData,
+  FamilyHeadOption,
 } from "../types";
 
 interface ResidentFormData {
@@ -143,12 +151,43 @@ const parseResidentCategories = (categories?: string | null): string[] => {
     .filter(Boolean);
 };
 
+const toFamilyAlphabetLabel = (index: number): string => {
+  const base = 26;
+  let n = index;
+  let label = "";
+
+  do {
+    label = String.fromCharCode(65 + (n % base)) + label;
+    n = Math.floor(n / base) - 1;
+  } while (n >= 0);
+
+  return `Family ${label}`;
+};
+
+interface HouseholdRegistryRow {
+  HouseID: number;
+  HouseholdID?: number;
+  householdNumber: string;
+  householdStatus: string;
+  Street_Alley_Zone: string;
+  Barangay: string;
+  memberCount: number;
+  familyCount: number;
+  hasHousehold: boolean;
+}
+
 const ResidentRecords: React.FC = () => {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState(0);
   const [residents, setResidents] = useState<ResidentListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [households, setHouseholds] = useState<HouseholdListItem[]>([]);
+  const [householdNumbers, setHouseholdNumbers] = useState<HouseholdNumber[]>(
+    [],
+  );
+  const [householdAddressOptions, setHouseholdAddressOptions] = useState<
+    HouseholdAddressOption[]
+  >([]);
   const [isHouseholdsLoading, setIsHouseholdsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
@@ -165,6 +204,14 @@ const ResidentRecords: React.FC = () => {
   const [isHeadWarningOpen, setIsHeadWarningOpen] = useState(false);
   const [isResidentProfileOpen, setIsResidentProfileOpen] = useState(false);
   const [isFamilyDetailOpen, setIsFamilyDetailOpen] = useState(false);
+  const [selectedFamilyGroupId, setSelectedFamilyGroupId] = useState<
+    number | null
+  >(null);
+  const [isHeadSelectOpen, setIsHeadSelectOpen] = useState(false);
+  const [selectedFamilyHeadId, setSelectedFamilyHeadId] = useState("");
+  const [preselectedHouseholdId, setPreselectedHouseholdId] = useState<
+    string | undefined
+  >(undefined);
 
   const [selectedResident, setSelectedResident] =
     useState<ResidentListItem | null>(null);
@@ -179,7 +226,11 @@ const ResidentRecords: React.FC = () => {
   >(undefined);
 
   const [newHouseholdNum, setNewHouseholdNum] = useState("");
-  const [newHouseholdStreet, setNewHouseholdStreet] = useState("");
+  const [selectedHouseholdStreet, setSelectedHouseholdStreet] = useState("");
+
+  const [isEditHouseholdOpen, setIsEditHouseholdOpen] = useState(false);
+  const [editHouseholdId, setEditHouseholdId] = useState<number | null>(null);
+  const [editHouseholdName, setEditHouseholdName] = useState("");
 
   const [familyAnchorEl, setFamilyAnchorEl] = useState<null | HTMLElement>(
     null,
@@ -193,6 +244,9 @@ const ResidentRecords: React.FC = () => {
   const [isFamilyLoading, setIsFamilyLoading] = useState(false);
   const [headTransferTarget, setHeadTransferTarget] =
     useState<FamilyRecord | null>(null);
+  const [familyHeadOptions, setFamilyHeadOptions] = useState<
+    FamilyHeadOption[]
+  >([]);
 
   const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
@@ -216,22 +270,62 @@ const ResidentRecords: React.FC = () => {
 
   // Fetch households from API
   const fetchHouseholds = useCallback(async () => {
-    setIsHouseholdsLoading(true);
     try {
       const data = await householdService.getAll();
       setHouseholds(data);
     } catch {
       notify.error("Failed to load households.");
+    }
+  }, []);
+
+  const fetchHouseholdNumbers = useCallback(async () => {
+    try {
+      const data = await householdService.getAllNumbers();
+      setHouseholdNumbers(data);
+    } catch {
+      notify.error("Failed to load household numbers.");
+    }
+  }, []);
+
+  const fetchHouseholdAddresses = useCallback(async () => {
+    try {
+      const data = await householdService.getAllAddresses();
+      setHouseholdAddressOptions(data);
+    } catch {
+      notify.error("Failed to load household addresses.");
+    }
+  }, []);
+
+  const loadHouseholdData = useCallback(async () => {
+    setIsHouseholdsLoading(true);
+    try {
+      await Promise.all([
+        fetchHouseholds(),
+        fetchHouseholdNumbers(),
+        fetchHouseholdAddresses(),
+      ]);
     } finally {
       setIsHouseholdsLoading(false);
+    }
+  }, [fetchHouseholds, fetchHouseholdNumbers, fetchHouseholdAddresses]);
+
+  useHouseholdDataRefresh(loadHouseholdData);
+
+  const fetchFamilyHeads = useCallback(async () => {
+    try {
+      const data = await familyService.getPrimaryHeads();
+      setFamilyHeadOptions(data);
+    } catch {
+      notify.error("Failed to load family heads.");
     }
   }, []);
 
   // Initial load
   useEffect(() => {
     fetchResidents();
-    fetchHouseholds();
-  }, [fetchResidents, fetchHouseholds]);
+    loadHouseholdData();
+    fetchFamilyHeads();
+  }, [fetchResidents, loadHouseholdData, fetchFamilyHeads]);
 
   // Debounced backend search
   useEffect(() => {
@@ -256,6 +350,7 @@ const ResidentRecords: React.FC = () => {
 
   const handleOpenAddModal = (headId?: string) => {
     setPreselectedHeadId(headId);
+    setPreselectedHouseholdId(undefined);
     setIsAddModalOpen(true);
   };
 
@@ -265,20 +360,21 @@ const ResidentRecords: React.FC = () => {
       return;
     }
 
-    const primaryHead = familyRecords.find(
-      (record) =>
-        record.HeadType === "Primary" &&
-        record.RelationshipToFamilyHead === null,
+    const primaryHeads = familyHeadOptions.filter(
+      (head) => head.householdId === activeHousehold.HouseholdID,
     );
 
-    if (!primaryHead) {
+    if (primaryHeads.length === 0) {
       notify.error(
         "No primary family head found. Assign a primary head before adding members.",
       );
       return;
     }
 
-    handleOpenAddModal(String(primaryHead.ResidentID));
+    setSelectedFamilyHeadId(
+      primaryHeads.length === 1 ? primaryHeads[0].id : "",
+    );
+    setIsHeadSelectOpen(true);
   };
 
   const handleSaveResident = async (
@@ -286,7 +382,16 @@ const ResidentRecords: React.FC = () => {
   ) => {
     const data = rawData as unknown as ResidentFormData;
     try {
+      const selectedFamilyHead =
+        data.householdRole === "member" && data.householdHeadId
+          ? familyHeadOptions.find((head) => head.id === data.householdHeadId)
+          : undefined;
+
       const selectedHouseholdId = (() => {
+        if (data.householdRole === "member" && selectedFamilyHead) {
+          return selectedFamilyHead.householdId;
+        }
+
         if (data.householdRole === "member" && activeHousehold?.HouseholdID) {
           return activeHousehold.HouseholdID;
         }
@@ -297,9 +402,20 @@ const ResidentRecords: React.FC = () => {
         }
 
         if (data.householdNumber) {
-          return households.find(
+          const found = households.find(
             (household) => household.householdNumber === data.householdNumber,
-          )?.HouseholdID;
+          );
+          if (found) {
+            return found.HouseholdID;
+          }
+          // If not found in existing households, look up HouseID from householdNumbers.
+          // The backend's resolveOrCreateHousehold will create the Household row if needed.
+          const hhNumber = householdNumbers.find(
+            (hn) => hn.HouseholdNumberName === data.householdNumber,
+          );
+          if (hhNumber) {
+            return hhNumber.HouseID;
+          }
         }
 
         return undefined;
@@ -358,56 +474,18 @@ const ResidentRecords: React.FC = () => {
         },
       };
 
-      const createResult = await residentService.create(payload);
-
-      if (payload.householdRole === "member") {
-        const relationship = data.familyRole?.trim();
-        const selectedHeadResidentId = Number(
-          preselectedHeadId || data.householdHeadId,
-        );
-
-        if (
-          selectedHouseholdId &&
-          Number.isInteger(selectedHeadResidentId) &&
-          selectedHeadResidentId > 0 &&
-          relationship
-        ) {
-          try {
-            const familyByHousehold =
-              await familyService.getByHousehold(selectedHouseholdId);
-
-            const primaryHeadRecord = familyByHousehold.find(
-              (record) =>
-                record.HeadType === "Primary" &&
-                Number(record.ResidentID) === selectedHeadResidentId,
-            );
-
-            if (primaryHeadRecord) {
-              await familyService.addMember(
-                primaryHeadRecord.FamilyHeadID,
-                createResult.residentId,
-                relationship,
-              );
-            } else {
-              notify.warn(
-                "Resident was added, but automatic family linking could not be completed.",
-              );
-            }
-          } catch {
-            notify.warn(
-              "Resident was added, but automatic family linking could not be completed.",
-            );
-          }
-        } else {
-          notify.warn(
-            "Resident was added, but family-link details were incomplete.",
-          );
-        }
+      // Include family linking fields when adding as a family member
+      if (data.householdRole === "member") {
+        payload.householdHeadId = data.householdHeadId;
+        payload.familyRole = data.familyRole || "Relative";
       }
+
+      await residentService.create(payload);
 
       notify.success("Resident added successfully!");
       await fetchResidents();
       await fetchHouseholds();
+      await fetchFamilyHeads();
 
       if (isFamilyDetailOpen && activeHousehold) {
         try {
@@ -484,19 +562,38 @@ const ResidentRecords: React.FC = () => {
   };
 
   const handleAddHousehold = async () => {
-    if (!newHouseholdNum.trim()) {
+    const trimmedHouseholdNumber = newHouseholdNum.trim();
+    const selectedStreet = (selectedHouseholdStreet || "").trim();
+
+    if (!trimmedHouseholdNumber) {
       notify.error("Household number is required.");
       return;
     }
+
+    if (!selectedStreet) {
+      notify.error("Please select a street to link this household number.");
+      return;
+    }
+
+    const matchedAddress = householdAddressOptions.find(
+      (a) => (a.Street_Alley_Zone || "").trim() === selectedStreet,
+    );
+
+    if (!matchedAddress) {
+      notify.error("Selected street could not be resolved to an address.");
+      return;
+    }
+
     try {
       await householdService.createNumber({
-        householdNumberName: newHouseholdNum,
+        householdNumberName: trimmedHouseholdNumber,
+        addressId: matchedAddress.AddressID,
       });
+
       notify.success("Household number created successfully!");
       setNewHouseholdNum("");
-      setNewHouseholdStreet("");
+      setSelectedHouseholdStreet("");
       setIsAddHouseholdOpen(false);
-      await fetchHouseholds();
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -505,12 +602,61 @@ const ResidentRecords: React.FC = () => {
     }
   };
 
+  const handleOpenEditHousehold = (houseId: number, currentName: string) => {
+    setEditHouseholdId(houseId);
+    setEditHouseholdName(currentName);
+    setIsEditHouseholdOpen(true);
+  };
+
+  const handleSaveHouseholdName = async () => {
+    if (!editHouseholdId || !editHouseholdName.trim()) {
+      notify.error("Household number name is required.");
+      return;
+    }
+
+    try {
+      await householdService.updateNumberName(
+        editHouseholdId,
+        editHouseholdName.trim(),
+      );
+      notify.success("Household number name updated successfully!");
+      setIsEditHouseholdOpen(false);
+      setEditHouseholdId(null);
+      setEditHouseholdName("");
+      await loadHouseholdData();
+    } catch (err: unknown) {
+      const message =
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message || "Failed to update household number name.";
+      notify.error(message);
+    }
+  };
+
   const handleManageFamilyClick = async (
     event: React.MouseEvent<HTMLButtonElement>,
-    household: HouseholdListItem,
+    household: HouseholdRegistryRow,
   ) => {
+    if (!household.HouseholdID) {
+      notify.info("This household number is not yet linked to a household.");
+      return;
+    }
+
     setFamilyAnchorEl(event.currentTarget);
-    setActiveHousehold(household);
+    const matchedHousehold = households.find(
+      (item) => item.HouseholdID === household.HouseholdID,
+    );
+    setActiveHousehold(
+      matchedHousehold || {
+        HouseholdID: household.HouseholdID,
+        householdNumber: household.householdNumber,
+        householdStatus: household.householdStatus,
+        HouseNumber: household.householdNumber,
+        Street_Alley_Zone: household.Street_Alley_Zone,
+        Barangay: household.Barangay,
+        memberCount: household.memberCount,
+        familyCount: household.familyCount,
+      },
+    );
     setIsFamilyLoading(true);
     try {
       const records = await familyService.getByHousehold(household.HouseholdID);
@@ -535,19 +681,15 @@ const ResidentRecords: React.FC = () => {
     setFilterAnchorEl(null);
   };
 
-  const handleViewFamilyDetail = () => {
+  const handleViewFamilyDetail = (familyHeadId?: number) => {
     setFamilyPage(1);
+    setSelectedFamilyGroupId(familyHeadId ?? null);
     setIsFamilyDetailOpen(true);
     setFamilyAnchorEl(null);
   };
 
-  const handleSetNewHead = (residentId: number) => {
-    const target = dedupedFamilyRecords.find(
-      (r) => r.ResidentID === residentId,
-    );
-    if (target) {
-      setHeadTransferTarget(target);
-    }
+  const handleSetNewHead = (record: FamilyRecord) => {
+    setHeadTransferTarget(record);
   };
 
   const confirmHeadTransfer = async () => {
@@ -556,7 +698,10 @@ const ResidentRecords: React.FC = () => {
 
     // Find the current primary head's FamilyHeadID
     const currentHead = familyRecords.find(
-      (r) => r.HeadType === "Primary" && r.RelationshipToFamilyHead === null,
+      (r) =>
+        r.HeadType === "Primary" &&
+        r.RelationshipToFamilyHead === null &&
+        r.FamilyHeadID === headTransferTarget.FamilyHeadID,
     );
     if (!currentHead) {
       notify.error("No current head found.");
@@ -592,10 +737,43 @@ const ResidentRecords: React.FC = () => {
           ),
         );
 
-  const filteredHouseholds = households.filter(
+  const householdRegistryRows = useMemo<HouseholdRegistryRow[]>(() => {
+    const householdsByNumber = new Map(
+      households.map((household) => [household.householdNumber, household]),
+    );
+
+    return householdNumbers.map((householdNumber) => {
+      const assignedHousehold = householdsByNumber.get(
+        householdNumber.HouseholdNumberName,
+      );
+
+      return {
+        HouseID: householdNumber.HouseID,
+        HouseholdID: assignedHousehold?.HouseholdID,
+        householdNumber: householdNumber.HouseholdNumberName,
+        householdStatus: householdNumber.Status,
+        Street_Alley_Zone:
+          householdNumber.Street_Alley_Zone ||
+          assignedHousehold?.Street_Alley_Zone ||
+          "—",
+        Barangay: assignedHousehold?.Barangay || "Barangay 619",
+        memberCount: assignedHousehold?.memberCount || 0,
+        familyCount: assignedHousehold?.familyCount || 0,
+        hasHousehold: Boolean(assignedHousehold),
+      };
+    });
+  }, [householdNumbers, households]);
+
+  // Fixed street list for this barangay
+  const streetOptions = useMemo(() => {
+    return ["Batas", "Katwiran", "Lubiran"];
+  }, []);
+
+  const filteredHouseholds = householdRegistryRows.filter(
     (h) =>
       h.householdNumber.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      h.Street_Alley_Zone.toLowerCase().includes(searchQuery.toLowerCase()),
+      h.Street_Alley_Zone.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      h.householdStatus.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   const residentTotalPages = Math.max(
@@ -677,9 +855,130 @@ const ResidentRecords: React.FC = () => {
     return Array.from(map.values());
   }, [familyRecords]);
 
+  const activeFamilyHeads = useMemo(() => {
+    if (!activeHousehold) {
+      return [] as FamilyHeadOption[];
+    }
+
+    return familyHeadOptions.filter(
+      (head) => head.householdId === activeHousehold.HouseholdID,
+    );
+  }, [activeHousehold, familyHeadOptions]);
+
+  const householdFamilyMap = useMemo(() => {
+    const map = new Map<number, FamilyHeadOption[]>();
+    for (const head of familyHeadOptions) {
+      const list = map.get(head.householdId) ?? [];
+      list.push(head);
+      map.set(head.householdId, list);
+    }
+    return map;
+  }, [familyHeadOptions]);
+
+  const familyGroups = useMemo(() => {
+    const map = new Map<
+      number,
+      {
+        label: string;
+        familyHeadId: number;
+        head: FamilyRecord | null;
+        members: FamilyRecord[];
+      }
+    >();
+
+    for (const record of familyRecords) {
+      const group = map.get(record.FamilyHeadID) ?? {
+        label: record.FamilyLabel || "Family",
+        familyHeadId: record.FamilyHeadID,
+        head: null,
+        members: [] as FamilyRecord[],
+      };
+
+      if (record.RelationshipToFamilyHead === null) {
+        group.head = record;
+      } else {
+        group.members.push(record);
+      }
+
+      map.set(record.FamilyHeadID, group);
+    }
+
+    return Array.from(map.values()).sort(
+      (a, b) => a.familyHeadId - b.familyHeadId,
+    );
+  }, [familyRecords]);
+
+  const familyGroupDisplayLabels = useMemo(() => {
+    const map = new Map<number, string>();
+    familyGroups.forEach((group, index) => {
+      map.set(group.familyHeadId, toFamilyAlphabetLabel(index));
+    });
+    return map;
+  }, [familyGroups]);
+
+  const familyGroupSizes = useMemo(() => {
+    const map = new Map<number, number>();
+    for (const group of familyGroups) {
+      const count = (group.head ? 1 : 0) + group.members.length;
+      map.set(group.familyHeadId, count);
+    }
+    return map;
+  }, [familyGroups]);
+
+  const displayFamilyGroups = useMemo(() => {
+    if (!selectedFamilyGroupId) {
+      return familyGroups;
+    }
+
+    return familyGroups.filter(
+      (group) => group.familyHeadId === selectedFamilyGroupId,
+    );
+  }, [familyGroups, selectedFamilyGroupId]);
+
+  const flatFamilyRows = useMemo(() => {
+    const rows: Array<
+      | { type: "header"; label: string; familyHeadId: number }
+      | { type: "member"; record: FamilyRecord }
+    > = [];
+
+    for (const group of displayFamilyGroups) {
+      rows.push({
+        type: "header",
+        label: familyGroupDisplayLabels.get(group.familyHeadId) ?? group.label,
+        familyHeadId: group.familyHeadId,
+      });
+
+      const sortedMembers = [...group.members].sort((a, b) => {
+        const compareName = `${a.LastName} ${a.FirstName}`.localeCompare(
+          `${b.LastName} ${b.FirstName}`,
+          undefined,
+          { sensitivity: "base" },
+        );
+
+        if (compareName !== 0) {
+          return familySortOrder === "asc" ? compareName : -compareName;
+        }
+
+        const dateA = new Date(a.DateOfBirth).getTime();
+        const dateB = new Date(b.DateOfBirth).getTime();
+        return familySortOrder === "asc" ? dateA - dateB : dateB - dateA;
+      });
+
+      if (group.head) {
+        rows.push({ type: "member", record: group.head });
+      }
+
+      for (const member of sortedMembers) {
+        rows.push({ type: "member", record: member });
+      }
+    }
+
+    return rows;
+  }, [displayFamilyGroups, familyGroupDisplayLabels, familySortOrder]);
+
   const familyTotalPages = Math.max(
     1,
-    Math.ceil(dedupedFamilyRecords.length / familyRowsPerPage),
+    Math.ceil(flatFamilyRows.length / familyRowsPerPage),
   );
 
   useEffect(() => {
@@ -692,58 +991,15 @@ const ResidentRecords: React.FC = () => {
     }
   }, [familyPage, familyTotalPages]);
 
-  const sortedFamilyRecords = [...dedupedFamilyRecords].sort((a, b) => {
-    const compareName = `${a.LastName} ${a.FirstName}`.localeCompare(
-      `${b.LastName} ${b.FirstName}`,
-      undefined,
-      { sensitivity: "base" },
-    );
-
-    if (compareName !== 0) {
-      return familySortOrder === "asc" ? compareName : -compareName;
-    }
-
-    const dateA = new Date(a.DateOfBirth).getTime();
-    const dateB = new Date(b.DateOfBirth).getTime();
-    return familySortOrder === "asc" ? dateA - dateB : dateB - dateA;
-  });
-
-  const paginatedFamilyRecords = sortedFamilyRecords.slice(
+  const paginatedFamilyRows = flatFamilyRows.slice(
     (familyPage - 1) * familyRowsPerPage,
     familyPage * familyRowsPerPage,
   );
 
-  const familyHeadOptions = useMemo(() => {
-    const householdMap = new Map(
-      households.map((household) => [
-        household.HouseholdID,
-        {
-          number: household.householdNumber,
-          street: household.Street_Alley_Zone,
-        },
-      ]),
-    );
-
-    return residents
-      .filter(
-        (resident) =>
-          resident.ResidentStatus === "Active" &&
-          typeof resident.HouseholdID === "number",
-      )
-      .map((resident) => {
-        const household =
-          typeof resident.HouseholdID === "number"
-            ? householdMap.get(resident.HouseholdID)
-            : undefined;
-
-        return {
-          id: String(resident.ResidentID),
-          name: `${resident.LastName}, ${resident.FirstName}`,
-          householdNumber: household?.number ?? "Unassigned",
-          street: household?.street ?? "",
-        };
-      });
-  }, [households, residents]);
+  const memoizedFamilyHeadOptions = useMemo(
+    () => familyHeadOptions,
+    [familyHeadOptions],
+  );
 
   return (
     <Box
@@ -1104,7 +1360,7 @@ const ResidentRecords: React.FC = () => {
                   <TableCell
                     sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "24%" }}
                   >
-                    HOUSEHOLD NO.
+                    HOUSEHOLD NAME
                   </TableCell>
                   <TableCell
                     sx={{ bgcolor: "#f8fafc", fontWeight: 800, width: "34%" }}
@@ -1146,32 +1402,84 @@ const ResidentRecords: React.FC = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginatedHouseholds.map((hh) => (
-                    <TableRow key={hh.HouseholdID} hover>
-                      <TableCell sx={{ fontWeight: 700, color: "#2e0249" }}>
-                        {hh.householdNumber}
-                      </TableCell>
-                      <TableCell>{hh.Street_Alley_Zone}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={`${hh.memberCount} Members`}
-                          size="small"
-                          sx={{ bgcolor: "#f3f4f6", fontWeight: 600 }}
-                        />
-                      </TableCell>
-                      <TableCell align="center">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          startIcon={<UsersRound size={16} />}
-                          onClick={(e) => handleManageFamilyClick(e, hh)}
-                          sx={{ textTransform: "none", borderRadius: 2 }}
-                        >
-                          Manage Families
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  paginatedHouseholds.map((hh) => {
+                    const familyCount = hh.HouseholdID
+                      ? (householdFamilyMap.get(hh.HouseholdID) ?? []).length
+                      : 0;
+
+                    return (
+                      <TableRow key={hh.HouseID} hover>
+                        <TableCell sx={{ fontWeight: 700, color: "#2e0249" }}>
+                          {hh.householdNumber}
+                        </TableCell>
+                        <TableCell>
+                          {hh.Street_Alley_Zone}
+                          <Typography
+                            variant="caption"
+                            display="block"
+                            color="text.secondary"
+                            sx={{ mt: 0.25 }}
+                          >
+                            {hh.householdStatus}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={String(familyCount)}
+                            size="small"
+                            sx={{ bgcolor: "#f3f4f6", fontWeight: 600 }}
+                          />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Stack
+                            direction="row"
+                            spacing={1}
+                            justifyContent="center"
+                          >
+                            <Tooltip title="Edit household number" arrow>
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  onClick={() =>
+                                    handleOpenEditHousehold(
+                                      hh.HouseID,
+                                      hh.householdNumber,
+                                    )
+                                  }
+                                  sx={{
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: 2,
+                                    color: "#2e0249",
+                                  }}
+                                >
+                                  <Pencil size={18} />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                            <Tooltip title="Manage families" arrow>
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  disabled={!hh.HouseID}
+                                  onClick={(e) =>
+                                    handleManageFamilyClick(e, hh)
+                                  }
+                                  sx={{
+                                    border: "1px solid #e2e8f0",
+                                    borderRadius: 2,
+                                    color: "#2e0249",
+                                    opacity: hh.HouseID ? 1 : 0.5,
+                                  }}
+                                >
+                                  <UsersRound size={18} />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
@@ -1211,15 +1519,20 @@ const ResidentRecords: React.FC = () => {
         onClose={() => {
           setIsAddModalOpen(false);
           setPreselectedHeadId(undefined);
+          setPreselectedHouseholdId(undefined);
         }}
         onSave={handleSaveResident}
         initialHeadId={preselectedHeadId}
-        householdOptions={households.map((h) => ({
-          id: String(h.HouseholdID),
-          number: h.householdNumber,
-          street: h.Street_Alley_Zone,
+        initialHouseholdId={preselectedHouseholdId}
+        householdOptions={householdNumbers.map((householdNumber) => ({
+          id: String(householdNumber.HouseID),
+          number: householdNumber.HouseholdNumberName,
+          street:
+            householdNumber.Street_Alley_Zone ||
+            householdNumber.HouseNumber ||
+            "",
         }))}
-        familyHeadOptions={familyHeadOptions}
+        familyHeadOptions={memoizedFamilyHeadOptions}
       />
       <ResidentProfileModal
         open={isResidentProfileOpen}
@@ -1248,12 +1561,24 @@ const ResidentRecords: React.FC = () => {
               value={newHouseholdNum}
               onChange={(e) => setNewHouseholdNum(e.target.value)}
             />
-            <TextField
-              fullWidth
-              label="Street Name"
-              value={newHouseholdStreet}
-              onChange={(e) => setNewHouseholdStreet(e.target.value)}
-            />
+            <FormControl fullWidth>
+              <InputLabel>Street</InputLabel>
+              <Select
+                value={selectedHouseholdStreet}
+                label="Street"
+                onChange={(e) => setSelectedHouseholdStreet(e.target.value)}
+              >
+                {streetOptions.length > 0 ? (
+                  streetOptions.map((street) => (
+                    <MenuItem key={street} value={street}>
+                      {street}
+                    </MenuItem>
+                  ))
+                ) : (
+                  <MenuItem disabled>No street records available</MenuItem>
+                )}
+              </Select>
+            </FormControl>
           </Stack>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
@@ -1261,6 +1586,38 @@ const ResidentRecords: React.FC = () => {
           <Button
             variant="contained"
             onClick={handleAddHousehold}
+            sx={{ bgcolor: "#2e0249" }}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Edit Household Number Dialog */}
+      <Dialog
+        open={isEditHouseholdOpen}
+        onClose={() => setIsEditHouseholdOpen(false)}
+        PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>
+          Edit Household Number
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Household Number Name"
+            value={editHouseholdName}
+            onChange={(e) => setEditHouseholdName(e.target.value)}
+            sx={{ mt: 1, minWidth: 350 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setIsEditHouseholdOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveHouseholdName}
             sx={{ bgcolor: "#2e0249" }}
           >
             Save
@@ -1419,17 +1776,68 @@ const ResidentRecords: React.FC = () => {
           <MenuItem disabled sx={{ py: 1.5 }}>
             Loading...
           </MenuItem>
-        ) : familyRecords.length === 0 ? (
+        ) : familyGroups.length === 0 ? (
           <MenuItem disabled sx={{ py: 1.5 }}>
             No family records
           </MenuItem>
         ) : (
-          <MenuItem onClick={handleViewFamilyDetail} sx={{ py: 1.5 }}>
-            <UsersRound size={16} style={{ marginRight: 8 }} />
-            View Family Members ({dedupedFamilyRecords.length} records)
-          </MenuItem>
+          <Box sx={{ py: 0.5 }}>
+            {familyGroups.map((group) => (
+              <MenuItem
+                key={group.familyHeadId}
+                onClick={() => handleViewFamilyDetail(group.familyHeadId)}
+                sx={{ py: 1 }}
+              >
+                <UsersRound size={16} style={{ marginRight: 8 }} />
+                {familyGroupDisplayLabels.get(group.familyHeadId) ??
+                  group.label}{" "}
+                ({familyGroupSizes.get(group.familyHeadId) ?? 0})
+              </MenuItem>
+            ))}
+          </Box>
         )}
       </Menu>
+
+      {/* Family Head Selection Dialog */}
+      <Dialog
+        open={isHeadSelectOpen}
+        onClose={() => setIsHeadSelectOpen(false)}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3 } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800 }}>Select Family Head</DialogTitle>
+        <DialogContent>
+          <TextField
+            select
+            fullWidth
+            label="Family Head"
+            value={selectedFamilyHeadId}
+            onChange={(e) => setSelectedFamilyHeadId(e.target.value)}
+            sx={{ mt: 1 }}
+          >
+            {activeFamilyHeads.map((head) => (
+              <MenuItem key={head.id} value={head.id}>
+                {head.familyLabel} - {head.name} ({head.householdNumber})
+              </MenuItem>
+            ))}
+          </TextField>
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setIsHeadSelectOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={!selectedFamilyHeadId}
+            onClick={() => {
+              setIsHeadSelectOpen(false);
+              handleOpenAddModal(selectedFamilyHeadId);
+            }}
+            sx={{ bgcolor: "#2e0249" }}
+          >
+            Continue
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Family Detail Dialog */}
       <Dialog
@@ -1455,6 +1863,15 @@ const ResidentRecords: React.FC = () => {
             <UsersRound size={24} className="text-indigo-600" />
             <Typography variant="h6" sx={{ fontWeight: 800 }}>
               Family Detail: {activeHousehold?.householdNumber}
+              {selectedFamilyGroupId
+                ? ` - ${
+                    familyGroupDisplayLabels.get(selectedFamilyGroupId) ||
+                    familyGroups.find(
+                      (group) => group.familyHeadId === selectedFamilyGroupId,
+                    )?.label ||
+                    "Family"
+                  }`
+                : ""}
             </Typography>
           </Box>
           <Stack direction="row" spacing={1}>
@@ -1505,7 +1922,7 @@ const ResidentRecords: React.FC = () => {
                         sx={{
                           fontWeight: 800,
                           bgcolor: "#f8fafc",
-                          width: "38%",
+                          width: "30%",
                         }}
                       >
                         NAME
@@ -1514,7 +1931,16 @@ const ResidentRecords: React.FC = () => {
                         sx={{
                           fontWeight: 800,
                           bgcolor: "#f8fafc",
-                          width: "22%",
+                          width: "18%",
+                        }}
+                      >
+                        FAMILY
+                      </TableCell>
+                      <TableCell
+                        sx={{
+                          fontWeight: 800,
+                          bgcolor: "#f8fafc",
+                          width: "20%",
                         }}
                       >
                         ROLE
@@ -1533,7 +1959,7 @@ const ResidentRecords: React.FC = () => {
                         sx={{
                           fontWeight: 800,
                           bgcolor: "#f8fafc",
-                          width: "26%",
+                          width: "18%",
                         }}
                       >
                         ACTIONS
@@ -1541,13 +1967,35 @@ const ResidentRecords: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {paginatedFamilyRecords.map((m) => {
+                    {paginatedFamilyRows.map((row) => {
+                      if (row.type === "header") {
+                        return (
+                          <TableRow key={`family-${row.familyHeadId}`}>
+                            <TableCell colSpan={5} sx={{ bgcolor: "#f8fafc" }}>
+                              <Chip
+                                label={row.label}
+                                size="small"
+                                sx={{
+                                  fontWeight: 800,
+                                  bgcolor: "#ede9fe",
+                                  color: "#4c1d95",
+                                }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
+                      const m = row.record;
                       const role =
                         m.RelationshipToFamilyHead === null
                           ? `Head (${m.HeadType})`
                           : m.RelationshipToFamilyHead;
                       const isHead = m.RelationshipToFamilyHead === null;
                       const isPrimary = isHead && m.HeadType === "Primary";
+                      const groupSize =
+                        familyGroupSizes.get(m.FamilyHeadID) ?? 0;
+
                       return (
                         <TableRow
                           key={`${m.FamilyHeadID}-${m.ResidentID}`}
@@ -1566,6 +2014,22 @@ const ResidentRecords: React.FC = () => {
                               )}
                               {m.FirstName} {m.LastName}
                             </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Chip
+                              label={
+                                familyGroupDisplayLabels.get(m.FamilyHeadID) ||
+                                m.FamilyLabel ||
+                                "Family"
+                              }
+                              size="small"
+                              sx={{
+                                fontWeight: 700,
+                                fontSize: "0.7rem",
+                                bgcolor: "#ede9fe",
+                                color: "#4c1d95",
+                              }}
+                            />
                           </TableCell>
                           <TableCell>
                             <Chip
@@ -1589,12 +2053,12 @@ const ResidentRecords: React.FC = () => {
                           </TableCell>
                           <TableCell>{calculateAge(m.DateOfBirth)}</TableCell>
                           <TableCell align="center">
-                            {!isPrimary && dedupedFamilyRecords.length > 1 ? (
+                            {!isPrimary && groupSize > 1 ? (
                               <Tooltip title="Set as Head of Family">
                                 <IconButton
                                   size="small"
                                   color="primary"
-                                  onClick={() => handleSetNewHead(m.ResidentID)}
+                                  onClick={() => handleSetNewHead(m)}
                                   sx={{ "&:hover": { bgcolor: "#eff6ff" } }}
                                 >
                                   <UserCheck size={18} />

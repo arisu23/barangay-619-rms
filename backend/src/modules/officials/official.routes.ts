@@ -15,6 +15,13 @@ router.get(
   OfficialController.getAllOfficials,
 );
 
+//GET /api/officials/active - List active officials (effective today)
+router.get(
+  "/active",
+  authorizeRole("Admin", "Staff"),
+  OfficialController.getActiveOfficials,
+);
+
 //GET /api/officials/:id - Get official by ID
 router.get(
   "/:id",

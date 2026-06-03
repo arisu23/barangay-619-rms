@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useBarangayLogo } from "../hooks/useBarangayLogo";
 import { householdService } from "../services/householdService";
 import { officialService } from "../services/officialService";
+import { useHouseholdDataRefresh } from "../hooks/useHouseholdDataSync";
 import type { HouseholdListItem, Official } from "../types";
 import {
   Box,
@@ -231,12 +232,14 @@ const FormA_Preview = ({
   residents,
   totalResidents,
   householdName,
+  householdStreet,
   barangaySecretaryName,
   punongBarangayName,
 }: {
   residents: ResidentRecord[];
   totalResidents: number;
   householdName: string;
+  householdStreet: string;
   barangaySecretaryName: string;
   punongBarangayName: string;
 }) => (
@@ -283,7 +286,8 @@ const FormA_Preview = ({
       </Grid>
       <Grid size={{ xs: 6 }}>
         <Typography variant="body2">
-          <strong>HOUSEHOLD ADDRESS :</strong> BATA ST., BACOOD
+          <strong>HOUSEHOLD ADDRESS :</strong>{" "}
+          {householdStreet ? `${householdStreet} St.` : "N/A"}
         </Typography>
       </Grid>
       <Grid size={{ xs: 6 }}>
@@ -1153,19 +1157,45 @@ const DetailedReportDialog: React.FC<DetailedReportDialogProps> = ({
         ["Demographics", category.label, periodLabel, buildDateToken()],
         "csv",
       );
-      const csvContent =
-        "data:text/csv;charset=utf-8," +
-        headers.join(",") +
-        "\n" +
-        csvRows.map((entry) => entry.join(",")).join("\n");
+      const csvContent = [headers, ...csvRows]
+        .map((row) =>
+          row
+            .map((value) => {
+              const normalized = value ?? "";
+              const text = String(normalized).replace(/"/g, '""');
+              return `"${text}"`;
+            })
+            .join(","),
+        )
+        .join("\n");
 
-      const encodedUri = encodeURI(csvContent);
-      const link = document.createElement("a");
-      link.setAttribute("href", encodedUri);
-      link.setAttribute("download", filename);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const blob = new Blob([csvContent], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const nav = window.navigator as Navigator & {
+        msSaveOrOpenBlob?: (data: Blob, fileName: string) => void;
+      };
+
+      if (typeof nav.msSaveOrOpenBlob === "function") {
+        nav.msSaveOrOpenBlob(blob, filename);
+      } else {
+        const fileUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = fileUrl;
+        link.download = filename;
+        link.rel = "noopener";
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            view: window,
+          }),
+        );
+        document.body.removeChild(link);
+        window.setTimeout(() => URL.revokeObjectURL(fileUrl), 5000);
+      }
       notify.success("CSV exported successfully.");
     } catch {
       notify.error("Failed to export CSV.");
@@ -1635,12 +1665,23 @@ const Reports: React.FC = () => {
       .then(setHouseholds)
       .catch(() => {});
     officialService
-      .getAll()
+      .getActive()
       .then(setOfficials)
       .catch(() => {
         notify.error("Failed to load barangay officials.");
       });
   }, [fetchDemographics, fetchFormCData]);
+
+  const refreshReportHouseholdData = useCallback(() => {
+    fetchDemographics();
+    fetchFormCData();
+    householdService
+      .getAll()
+      .then(setHouseholds)
+      .catch(() => {});
+  }, [fetchDemographics, fetchFormCData]);
+
+  useHouseholdDataRefresh(refreshReportHouseholdData);
 
   useEffect(() => {
     fetchFormAPreview();
@@ -1968,9 +2009,7 @@ const Reports: React.FC = () => {
 
         try {
           await reportService.logExportAudit(
-            rbiTemplate === "Form C"
-              ? "FORM_C"
-              : "BARANGAY_CERTIFICATION",
+            rbiTemplate === "Form C" ? "FORM_C" : "BARANGAY_CERTIFICATION",
             metadata,
           );
         } catch {
@@ -2334,6 +2373,7 @@ const Reports: React.FC = () => {
                           residents={formAPreviewResidents}
                           totalResidents={formAPreviewTotalRows}
                           householdName={formAHouseholdName}
+                          householdStreet={selectedHousehold?.Street_Alley_Zone || ""}
                           barangaySecretaryName={barangaySecretaryName}
                           punongBarangayName={punongBarangayName}
                         />

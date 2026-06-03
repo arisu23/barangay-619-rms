@@ -1,4 +1,5 @@
 import { pool } from "../../config/database.js";
+import { HouseholdRepository } from "../households/household.repository.js";
 
 const normalizeCategoryName = (category: string): string | null => {
   const normalized = category.trim();
@@ -167,11 +168,33 @@ export class ResidentRepository {
 
       const addressId = Number(addressResult.insertId);
 
-      //Add Household
+      //Add Household - resolve HouseID → HouseholdID if needed
       let householdId: number | null = null;
 
       if (data.householdId) {
-        householdId = data.householdId;
+        // First check if this is a valid HouseholdID
+        const directCheck = await conn.query(
+          `SELECT HouseholdID FROM Household WHERE HouseholdID = ? LIMIT 1`,
+          [data.householdId],
+        );
+
+        if (directCheck.length > 0) {
+          householdId = data.householdId;
+        } else {
+          // It might be a HouseID from HouseholdNumber - resolve it
+          try {
+            householdId = await HouseholdRepository.resolveOrCreateHousehold(
+              conn,
+              data.householdId,
+            );
+          } catch {
+            // If resolution fails, throw a clear error
+            throw {
+              status: 400,
+              message: "Invalid household ID!",
+            };
+          }
+        }
       }
 
       //Add Resident (all schema fields)
@@ -404,8 +427,21 @@ export class ResidentRepository {
             SELECT CONCAT(headResident.FirstName, ' ', headResident.LastName)
             FROM FamilyHead head
             JOIN Resident headResident ON head.ResidentID = headResident.ResidentID
-            WHERE head.HouseholdID = r.HouseholdID
-              AND head.HeadType = 'Primary'
+            WHERE head.FamilyHeadID = COALESCE(
+              (
+                SELECT fh.FamilyHeadID
+                FROM FamilyHead fh
+                WHERE fh.ResidentID = r.ResidentID
+                  AND fh.HeadType = 'Primary'
+                LIMIT 1
+              ),
+              (
+                SELECT f.FamilyHeadID
+                FROM Family f
+                WHERE f.ResidentID = r.ResidentID
+                LIMIT 1
+              )
+            )
             LIMIT 1
           ) AS HouseholdHeadName,
           rhs.OccupancyStatus AS OccupancyStatus,
@@ -458,12 +494,15 @@ export class ResidentRepository {
             FROM ResidentCategory rc
             JOIN SpecialCategory sc ON rc.CategoryID = sc.CategoryID
             WHERE rc.ResidentID = r.ResidentID
-          ) AS Categories
+          ) AS Categories,
+          fam.FamilyHeadID AS FamilyHeadID,
+          fam.RelationshipToFamilyHead AS RelationshipToFamilyHead
         FROM Resident r
         LEFT JOIN Household h ON r.HouseholdID = h.HouseholdID
         LEFT JOIN HouseholdNumber hn ON h.HouseID = hn.HouseID
         LEFT JOIN Address a ON h.AddressID = a.AddressID
         LEFT JOIN ResidentHouseholdSetup rhs ON rhs.ResidentID = r.ResidentID
+        LEFT JOIN Family fam ON fam.ResidentID = r.ResidentID
         WHERE r.ResidentID = ?`,
         [id],
       );
@@ -533,6 +572,29 @@ export class ResidentRepository {
       let employmentSynced = false;
       let voterSynced = false;
       let occupancySynced = false;
+      let householdSynced = false;
+
+      if (hasOwn(payload, "householdId")) {
+        const requestedHouseholdId = data.householdId;
+        const normalizedHouseholdId =
+          requestedHouseholdId === null ||
+          requestedHouseholdId === "" ||
+          requestedHouseholdId === undefined
+            ? null
+            : Number(requestedHouseholdId);
+
+        const householdIdValue =
+          typeof normalizedHouseholdId === "number" &&
+          Number.isFinite(normalizedHouseholdId)
+            ? normalizedHouseholdId
+            : null;
+
+        await conn.query(
+          `UPDATE Resident SET HouseholdID = ? WHERE ResidentID = ?`,
+          [householdIdValue, id],
+        );
+        householdSynced = true;
+      }
 
       if (Array.isArray(data.categories)) {
         const requestedCategories = normalizeCategoryList(data.categories);
@@ -700,7 +762,8 @@ export class ResidentRepository {
         educationSynced ||
         employmentSynced ||
         voterSynced ||
-        occupancySynced
+        occupancySynced ||
+        householdSynced
       );
     } catch (err) {
       await conn.rollback();
